@@ -1,0 +1,19 @@
+# Локальная БД для разработки: docker compose up -d
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: stars
+      POSTGRES_PASSWORD: stars
+      POSTGRES_DB: stars
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "stars"]
+      interval: 2s
+      retries: 15
+
+volumes:
+  pgdata:

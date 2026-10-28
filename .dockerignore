@@ -1,0 +1,5 @@
+target
+.git
+*.duckdb
+*.duckdb.wal
+*.md
