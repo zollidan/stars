@@ -1,6 +1,8 @@
-# Sports Taxonomy, Alignment & Reconciliation System
+<p align="center">
+  <img src="public/STARS%20Logo.png" alt="STARS — Sports Taxonomy, Alignment & Reconciliation System" width="800">
+</p>
 
-### STARS — open-source, self-hosted платформа для формирования и сопровождения спортивных мастер-данных из пользовательских источников, обеспечивающая устойчивую идентификацию сущностей, проверяемое сопоставление и управляемое подключение новых источников.
+<p align="center"><strong>STARS</strong> — open-source, self-hosted платформа для формирования и сопровождения спортивных мастер-данных из пользовательских источников, обеспечивающая устойчивую идентификацию сущностей, проверяемое сопоставление и управляемое подключение новых источников.</p>
 
 ## Разработка
 
