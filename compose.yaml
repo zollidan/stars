@@ -1,4 +1,4 @@
-# Локальная БД для разработки: docker compose up -d
+# Local PostgreSQL for development: docker compose up -d
 services:
   db:
     image: postgres:18-alpine

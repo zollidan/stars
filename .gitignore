@@ -1,4 +1,23 @@
-/target
-*.duckdb
-*.duckdb.wal
+# Build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.suo
+
+# IDE
+.vs/
+.idea/
+.vscode/
+*.swp
+
+# Test artifacts
+TestResults/
+coverage*.xml
+coverage*.json
+
+# Local secrets and local data
+appsettings.Local.json
 .env
+*.duckdb
