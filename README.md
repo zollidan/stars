@@ -154,9 +154,24 @@ npm ci
 npm run build
 ```
 
+## Legacy data evaluation
+
+The old Rust `team_directory` dump can be restored into a throwaway PostgreSQL 16
+container and evaluated against the new normalizer/matcher:
+
+```bash
+./scripts/restore-legacy-dump.sh eva-team-directory_backup_2026-11-15_00-00-08.dump
+STARS_LEGACY_CONNECTION='Host=127.0.0.1;Port=55433;Database=team_directory;Username=stars;Password=stars' \
+  dotnet run --project tools/Stars.LegacyEval -c Release -- --out=docs/legacy-eval-report.md
+```
+
+The dump is not committed. See [Legacy evaluation](docs/legacy-eval.md) for the dataset
+shape, current precision/recall baseline and the CI corpus extracted from it.
+
 ## Documentation
 
 - [Architecture](docs/architecture.md)
+- [Legacy team-directory evaluation](docs/legacy-eval.md)
 - [Connector contract](docs/connector-contract.md)
 - [Prototype report](docs/prototype-report.md)
 - [ADR-0001: PostgreSQL + pg_trgm](docs/adr/0001-postgres-pg-trgm.md)

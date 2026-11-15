@@ -93,6 +93,21 @@ public class MatchEngineTests
     }
 
     [Fact]
+    public void Repeated_name_inside_one_feed_requires_review()
+    {
+        var source = new SourceEntityProfile(
+            Guid.NewGuid(), Guid.NewGuid(), "api", "team",
+            "Al Ittihad", "al ittihad", "football", null, [], SameFeedNameCount: 3);
+        var candidate = new CandidateTarget(
+            Guid.NewGuid(), null, "bookmaker", "Al Ittihad", "al ittihad", "football", null, []);
+
+        var result = new MatchEngine().Run(source, [candidate]);
+
+        Assert.False(result.AutoLink);
+        Assert.Equal(DecisionReasons.SourceNameAmbiguous, result.Reason);
+    }
+
+    [Fact]
     public void No_shared_context_falls_below_auto_threshold()
     {
         var source = new SourceEntityProfile(

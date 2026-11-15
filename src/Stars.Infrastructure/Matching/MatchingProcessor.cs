@@ -606,7 +606,11 @@ public sealed class MatchingProcessor(
         await using (var command = new NpgsqlCommand(
             """
             SELECT se.id, se.source_feed_id, sf.feed_key, se.entity_kind, se.display_name,
-                   se.normalized_name, se.sport_code, se.country_code
+                   se.normalized_name, se.sport_code, se.country_code,
+                   (SELECT count(*) FROM source_entities same
+                    WHERE same.source_feed_id = se.source_feed_id
+                      AND same.entity_kind = se.entity_kind
+                      AND same.normalized_name = se.normalized_name)
             FROM source_entities se
             JOIN source_feeds sf ON sf.id = se.source_feed_id
             WHERE se.id = @id
@@ -625,7 +629,8 @@ public sealed class MatchingProcessor(
                     reader.GetString(5),
                     reader.IsDBNull(6) ? null : reader.GetString(6),
                     reader.IsDBNull(7) ? null : reader.GetString(7),
-                    []);
+                    [],
+                    (int)reader.GetInt64(8));
             }
         }
 

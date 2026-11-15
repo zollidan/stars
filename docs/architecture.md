@@ -133,10 +133,14 @@ Automatic linking requires all of:
 - top score ≥ 0.88;
 - margin to second candidate ≥ 0.03;
 - no hard conflict;
-- a name with more than one token **or** a shared fixture context.
+- a name with more than one token **or** a shared fixture context;
+- no multiple teams in the source feed share the same normal form (otherwise
+  `source_name_ambiguous` → review).
 
-The last rule is why a bare `Динамо` cannot become canonical just because one provider uses
-the same word. Two plausible `Динамо` candidates produce `ambiguous` and stay in Review.
+The last rules are why a bare `Динамо` cannot become canonical just because one provider
+uses the same word. Two plausible `Динамо` candidates produce `ambiguous` and stay in
+Review; several `Al Ittihad` records in one feed are not made unique by one bookmaker
+candidate.
 
 ## 6. Link writing
 

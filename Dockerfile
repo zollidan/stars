@@ -10,6 +10,7 @@ COPY src/Stars.Connectors.Abstractions/Stars.Connectors.Abstractions.csproj src/
 COPY src/Stars.Connectors.Rest/Stars.Connectors.Rest.csproj src/Stars.Connectors.Rest/
 COPY src/Stars.Connectors.Eva/Stars.Connectors.Eva.csproj src/Stars.Connectors.Eva/
 COPY tests/Stars.Tests/Stars.Tests.csproj tests/Stars.Tests/
+COPY tools/Stars.LegacyEval/Stars.LegacyEval.csproj tools/Stars.LegacyEval/
 RUN dotnet restore Stars.slnx
 
 COPY . .

@@ -21,6 +21,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="Fixtures\legacy-corpus.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Stars.Infrastructure\Stars.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Stars.Domain\Stars.Domain.csproj" />
     <ProjectReference Include="..\..\src\Stars.Application\Stars.Application.csproj" />

@@ -91,7 +91,21 @@ I/O, not throughput.
 - The worker is a single process. Queue leasing already supports more workers, but no
   stress test has been performed.
 
-## 7. Reproduce
+## 7. Legacy dump evaluation
+
+The old Rust `team_directory` dump was restored separately and used as a labelled corpus:
+
+- 130,813 provider records, 26,363 with a legacy `team_id`;
+- 10,097 canonical teams and 22,398 cross-provider positive pairs;
+- 50,000 random cross-provider negatives and 277 ambiguous names as hard negatives.
+
+Name-only scoring at the current 0.88 threshold reached **99.98% precision / 73.6%
+recall** on positives. At 0.70 it reached **99.3% / 92.6%**. The dump also exposed real
+normalizer defects (Turkish dotless letters, `ø`, Cyrillic `й/ю/я`, `до 21`,
+`St/Sankt`), which were fixed; disagreement with the old normalizer fell from 11.33% to
+5.96%. Details: [legacy-eval.md](legacy-eval.md).
+
+## 8. Reproduce
 
 ```bash
 docker compose up --build

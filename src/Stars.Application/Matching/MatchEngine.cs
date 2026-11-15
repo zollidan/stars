@@ -18,7 +18,8 @@ public sealed record SourceEntityProfile(
     string NormalizedName,
     string? SportCode,
     string? CountryCode,
-    IReadOnlyList<MatchContextFact> Context);
+    IReadOnlyList<MatchContextFact> Context,
+    int SameFeedNameCount = 1);
 
 /// <summary>
 /// A possible target. Exactly one of <paramref name="CandidateSourceEntityId"/> and
@@ -69,6 +70,7 @@ public static class DecisionReasons
     public const string BelowThreshold = "below_threshold";
     public const string Ambiguous = "ambiguous";
     public const string ShortNameWithoutContext = "short_name_without_context";
+    public const string SourceNameAmbiguous = "source_name_ambiguous";
 }
 
 /// <summary>
@@ -123,6 +125,14 @@ public sealed class MatchEngine
         if (margin < MinimumMargin)
         {
             return new MatchRunResult(top.Score, margin, top, scored, DecisionReasons.Ambiguous);
+        }
+
+        // If the source feed itself contains several teams with the same normal form,
+        // one cross-provider candidate is not enough evidence. "Al Ittihad" exists in
+        // several countries and providers; a unique *candidate* is not a unique *team*.
+        if (source.SameFeedNameCount > 1 && top.ContextValue <= 0)
+        {
+            return new MatchRunResult(top.Score, margin, top, scored, DecisionReasons.SourceNameAmbiguous);
         }
 
         if (top.Score < AutoLinkThreshold)
