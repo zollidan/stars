@@ -26,12 +26,22 @@ namespace Stars.Connectors.Eva;
 public sealed class EvaDataHubConnector : IConnector
 {
     public const string ConnectorKey = "eva.datahub";
-    private static readonly string[] Columns =
+    private const string ApiSportDataset = "api_sport_matches_v1";
+    private static readonly string[] ApiSportColumns =
     [
         "match_id", "match_date", "kickoff_time", "league",
         "home_team_id", "home_team_name", "away_team_id", "away_team_name",
         "first_seen_at", "collected_at",
     ];
+
+    private static string[] ColumnsFor(string dataset) => dataset switch
+    {
+        ApiSportDataset => ApiSportColumns,
+        "odds_v1" => ["event_id", "team1", "team2", "start_time", "first_seen_at", "last_seen_at"],
+        "winline_odds_v1" or "marathon_odds_v1" =>
+            ["event_id", "team1", "team2", "start_time", "league", "first_seen_at", "last_seen_at"],
+        _ => throw new InvalidOperationException($"Unsupported EVA dataset '{dataset}'."),
+    };
 
     public string Key => ConnectorKey;
 
@@ -48,10 +58,12 @@ public sealed class EvaDataHubConnector : IConnector
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var settings = context.Settings;
+        var dataset = GetString(settings, "dataset") ?? ApiSportDataset;
+        var columns = ColumnsFor(dataset);
         var mode = GetString(settings, "mode") ?? "grpc";
         if (string.Equals(mode, "fixture", StringComparison.OrdinalIgnoreCase))
         {
-            await foreach (var batch in ReadFixtureAsync(context, settings, cancellationToken))
+            await foreach (var batch in ReadFixtureAsync(context, settings, dataset, cancellationToken))
             {
                 yield return batch;
             }
@@ -59,7 +71,7 @@ public sealed class EvaDataHubConnector : IConnector
             yield break;
         }
 
-        await foreach (var batch in ReadGrpcAsync(context, settings, cancellationToken))
+        await foreach (var batch in ReadGrpcAsync(context, settings, dataset, columns, cancellationToken))
         {
             yield return batch;
         }
@@ -68,6 +80,7 @@ public sealed class EvaDataHubConnector : IConnector
     private static async IAsyncEnumerable<SourceBatch> ReadFixtureAsync(
         ConnectorContext context,
         JsonElement settings,
+        string dataset,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var fixturePath = GetString(settings, "fixturePath")
@@ -87,27 +100,27 @@ public sealed class EvaDataHubConnector : IConnector
             cancellationToken)
             ?? throw new InvalidOperationException($"EVA fixture '{path}' is empty.");
 
+        var isBookmaker = dataset != ApiSportDataset;
         var rows = (fixture.Rows ?? [])
-            .OrderBy(row => row.MatchDate)
-            .ThenBy(row => row.MatchId)
             .Select(row => new EvaMatchRow(
-                row.MatchId,
-                row.MatchDate is null
+                isBookmaker ? row.EventId : row.MatchId,
+                isBookmaker || row.MatchDate is null
                     ? null
                     : new DateTimeOffset(row.MatchDate.Value.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero),
-                row.KickoffTime,
-                row.League,
-                row.HomeTeamId,
-                row.HomeTeamName,
-                row.AwayTeamId,
-                row.AwayTeamName,
-                row.CollectedAt ?? row.FirstSeenAt))
+                isBookmaker ? row.StartTime : row.KickoffTime,
+                dataset == "odds_v1" ? null : row.League,
+                isBookmaker ? null : row.HomeTeamId,
+                isBookmaker ? row.Team1 ?? string.Empty : row.HomeTeamName,
+                isBookmaker ? null : row.AwayTeamId,
+                isBookmaker ? row.Team2 ?? string.Empty : row.AwayTeamName,
+                (isBookmaker ? row.LastSeenAt : row.CollectedAt) ?? row.FirstSeenAt))
+            .OrderBy(row => isBookmaker ? row.KickoffAt : row.MatchDate)
+            .ThenBy(row => row.MatchId)
             .ToArray();
         var pageSize = Math.Min(
             Math.Clamp(GetInt(settings, "pageSize") ?? 100, 1, 1000),
             (int)Math.Max(1, context.MaxRecords));
         var offset = ParseOffset(context.Cursor, out _);
-        var dataset = GetString(settings, "dataset") ?? "api_sport_matches_v1";
         var snapshot = fixture.SnapshotId ?? 1;
 
         var emitted = 0;
@@ -133,12 +146,13 @@ public sealed class EvaDataHubConnector : IConnector
     private static async IAsyncEnumerable<SourceBatch> ReadGrpcAsync(
         ConnectorContext context,
         JsonElement settings,
+        string dataset,
+        string[] columns,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var address = GetString(settings, "address")
             ?? context.BaseUrl
             ?? throw new InvalidOperationException("EVA connector requires settings.address or baseUrl.");
-        var dataset = GetString(settings, "dataset") ?? "api_sport_matches_v1";
         var offset = ParseOffset(context.Cursor, out var pinnedSnapshot);
         var remaining = Math.Max(1, context.MaxRecords);
         var limit = (int)Math.Min(Math.Min(remaining, 100_000), int.MaxValue);
@@ -153,8 +167,10 @@ public sealed class EvaDataHubConnector : IConnector
 
         var query = JsonSerializer.Serialize(new
         {
-            columns = Columns,
-            order = new[] { new[] { "match_date", "asc" }, new[] { "match_id", "asc" } },
+            columns,
+            order = dataset == ApiSportDataset
+                ? new[] { new[] { "match_date", "asc" }, new[] { "match_id", "asc" } }
+                : new[] { new[] { "start_time", "asc" }, new[] { "event_id", "asc" } },
             limit,
             offset,
         });
@@ -191,7 +207,7 @@ public sealed class EvaDataHubConnector : IConnector
                 continue;
             }
 
-            var rows = ParseArrow(message.ArrowIpc.Memory)
+            var rows = ParseArrow(message.ArrowIpc.Memory, dataset, columns)
                 .Take((int)Math.Min(limit - rowsRead, int.MaxValue)).ToArray();
             if (rows.Length == 0)
             {
@@ -229,8 +245,18 @@ public sealed class EvaDataHubConnector : IConnector
 
         foreach (var row in rows)
         {
-            var homeKey = TeamKey(row.HomeTeamId, row.HomeTeamName);
-            var awayKey = TeamKey(row.AwayTeamId, row.AwayTeamName);
+            if (row.MatchId is null || string.IsNullOrWhiteSpace(row.HomeTeamName)
+                || string.IsNullOrWhiteSpace(row.AwayTeamName))
+            {
+                throw new InvalidOperationException($"EVA dataset '{dataset}' requires an event ID and two non-empty team names.");
+            }
+
+            var homeKey = dataset == ApiSportDataset
+                ? TeamKey(row.HomeTeamId, row.HomeTeamName)
+                : BookmakerTeamKey(row.HomeTeamName, row.League);
+            var awayKey = dataset == ApiSportDataset
+                ? TeamKey(row.AwayTeamId, row.AwayTeamName)
+                : BookmakerTeamKey(row.AwayTeamName, row.League);
             var competitionKey = CompetitionKey(row.League);
             var sport = "football";
 
@@ -250,7 +276,7 @@ public sealed class EvaDataHubConnector : IConnector
                     row.ObservedAt);
             }
 
-            var matchId = row.MatchId?.ToString(CultureInfo.InvariantCulture) ?? row.MatchDate?.ToString("yyyyMMdd");
+            var matchId = row.MatchId.Value.ToString(CultureInfo.InvariantCulture);
             var eventKey = $"match:{matchId}";
             var kickoff = row.KickoffAt ?? row.MatchDate;
             events[eventKey] = new SourceEventRecord(
@@ -301,12 +327,18 @@ public sealed class EvaDataHubConnector : IConnector
             ? $"team:name:{name.Trim().ToLowerInvariant()}"
             : $"team:{id.Value.ToString(CultureInfo.InvariantCulture)}";
 
+    // shortcut: names without a league cannot distinguish homonyms; use provider team IDs when available.
+    private static string BookmakerTeamKey(string name, string? league) =>
+        $"team:name:{Uri.EscapeDataString(name.Trim().ToLowerInvariant())}"
+        + (string.IsNullOrWhiteSpace(league) ? string.Empty
+            : $":league:{Uri.EscapeDataString(league.Trim().ToLowerInvariant())}");
+
     private static string? CompetitionKey(string? league) =>
         string.IsNullOrWhiteSpace(league)
             ? null
             : $"league:{league.Trim().ToLowerInvariant()}";
 
-    private static List<EvaMatchRow> ParseArrow(ReadOnlyMemory<byte> payload)
+    private static List<EvaMatchRow> ParseArrow(ReadOnlyMemory<byte> payload, string dataset, string[] columns)
     {
         var rows = new List<EvaMatchRow>();
         using var stream = new MemoryStream(payload.ToArray(), writable: false);
@@ -316,16 +348,21 @@ public sealed class EvaDataHubConnector : IConnector
         {
             using (batch)
             {
-                var matchId = batch.Column("match_id");
-                var matchDate = batch.Column("match_date");
-                var kickoff = batch.Column("kickoff_time");
-                var league = batch.Column("league");
-                var homeId = batch.Column("home_team_id");
-                var homeName = batch.Column("home_team_name");
-                var awayId = batch.Column("away_team_id");
-                var awayName = batch.Column("away_team_name");
-                var firstSeen = batch.Column("first_seen_at");
-                var collected = batch.Column("collected_at");
+                var isBookmaker = dataset != ApiSportDataset;
+                // Only declared fields may be read: Fonbet has no league or team ID columns.
+                IArrowArray? Column(string name) => columns.Contains(name, StringComparer.Ordinal)
+                    ? batch.Column(name)
+                    : null;
+                var matchId = Column(isBookmaker ? "event_id" : "match_id");
+                var matchDate = Column("match_date");
+                var kickoff = Column(isBookmaker ? "start_time" : "kickoff_time");
+                var league = Column("league");
+                var homeId = Column("home_team_id");
+                var homeName = Column(isBookmaker ? "team1" : "home_team_name");
+                var awayId = Column("away_team_id");
+                var awayName = Column(isBookmaker ? "team2" : "away_team_name");
+                var firstSeen = Column("first_seen_at");
+                var collected = Column(isBookmaker ? "last_seen_at" : "collected_at");
 
                 for (var index = 0; index < batch.Length; index++)
                 {
@@ -461,7 +498,22 @@ public sealed class EvaDataHubConnector : IConnector
     public sealed class EvaFixtureRow
     {
         [JsonPropertyName("match_id")]
-        public long MatchId { get; set; }
+        public long? MatchId { get; set; }
+
+        [JsonPropertyName("event_id")]
+        public long? EventId { get; set; }
+
+        [JsonPropertyName("team1")]
+        public string? Team1 { get; set; }
+
+        [JsonPropertyName("team2")]
+        public string? Team2 { get; set; }
+
+        [JsonPropertyName("start_time")]
+        public DateTimeOffset? StartTime { get; set; }
+
+        [JsonPropertyName("last_seen_at")]
+        public DateTimeOffset? LastSeenAt { get; set; }
 
         [JsonPropertyName("match_date")]
         public DateOnly? MatchDate { get; set; }

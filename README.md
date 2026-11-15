@@ -145,6 +145,12 @@ make the package public if anonymous pulls are intended.
 Provider secrets are stored only as **references** (`provider_connections.auth_secret_ref`).
 `provider_connections.settings` never contains an API key.
 
+The EVA connector reads API-Sport (`api_sport_matches_v1`), Fonbet (`odds_v1`),
+Winline (`winline_odds_v1`) and Marathon (`marathon_odds_v1`) from the same DataHub.
+Use a separate feed with `config.dataset` for each source; the demo seeder still creates
+only its original API-Sport and REST demo feeds. See the [schema mappings and identity
+limits](docs/connector-contract.md#6-eva-datahub-connector).
+
 ## Repository layout
 
 ```text

@@ -126,6 +126,32 @@ The connector receives the resolved value for the duration of the run.
 
 Key: `eva.datahub`.
 
+The `dataset` setting selects one of the supported EVA schemas:
+
+| Source | Dataset | Team names | Event identity | Observation time |
+| --- | --- | --- | --- | --- |
+| API-Sport | `api_sport_matches_v1` | `home_team_name`, `away_team_name` (with team IDs) | `match_id` | `collected_at`, falling back to `first_seen_at` |
+| Fonbet | `odds_v1` | `team1`, `team2` | `event_id` | `last_seen_at`, falling back to `first_seen_at` |
+| Winline | `winline_odds_v1` | `team1`, `team2` | `event_id` | `last_seen_at`, falling back to `first_seen_at` |
+| Marathon | `marathon_odds_v1` | `team1`, `team2` | `event_id` | `last_seen_at`, falling back to `first_seen_at` |
+
+Bookmaker schemas use `start_time` for kickoff; Winline and Marathon also provide an
+optional `league`. Fonbet has no league field, so the connector does not request it.
+Only identity/context columns are requested: prices, totals and historical
+`*_snapshots_v1` datasets are excluded.
+
+Create a separate feed for each dataset. A feed's `config.dataset` overrides the
+provider's `settings.dataset`, so the same DataHub connection/token can serve all four
+feeds. `dataset_ref` is descriptive metadata; `config.dataset` selects the actual read.
+Existing feeds are not created or modified automatically by adding schema support.
+
+API-Sport keeps `team:<team_id>` source keys. Bookmakers have no team IDs: their keys
+contain the lowercased, trimmed, URI-escaped name and, when supplied, league. For example,
+`team:name:alpha:league:premier%20league`. Without league the key is `team:name:alpha`.
+Keys are scoped to the feed. Homonyms without league cannot be distinguished, and a
+name/league change creates another source identity; provider team IDs are needed to
+remove this limitation. `event_id` is never used as a team ID.
+
 Settings:
 
 ```json
@@ -136,6 +162,9 @@ Settings:
   "maxRecords": 300
 }
 ```
+
+For Winline, use `"dataset": "winline_odds_v1"`; for Fonbet, `"odds_v1"`; for Marathon,
+`"marathon_odds_v1"`. The address and secret reference stay the same.
 
 The gRPC path:
 
