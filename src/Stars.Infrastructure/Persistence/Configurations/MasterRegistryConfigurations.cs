@@ -31,6 +31,11 @@ public class MasterEntityConfiguration : IEntityTypeConfiguration<MasterEntity>
         builder.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()").IsRequired();
 
         builder.HasIndex(x => new { x.EntityKind, x.SportCode }).HasDatabaseName("ix_master_kind");
+
+        builder.HasIndex(x => x.NormalizedName)
+            .HasDatabaseName("ix_master_entities_name_trgm")
+            .HasMethod("gin")
+            .HasOperators("gin_trgm_ops");
     }
 }
 

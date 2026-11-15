@@ -1,0 +1,114 @@
+syntax = "proto3";
+package eva.datahub.v1;
+
+service DataHubService {
+  rpc ListDatasets(Empty) returns (ListDatasetsResponse);
+  rpc GetDatasetSchema(DatasetRequest) returns (DatasetSchemaResponse);
+  rpc GetDatasetSummary(DatasetRequest) returns (DatasetSummaryResponse);
+  rpc QueryRecords(QueryRecordsRequest) returns (QueryRecordsResponse);
+  rpc ReadRecords(ReadRecordsRequest) returns (stream RecordBatch);
+  rpc WriteRecords(stream WriteRecordsRequest) returns (WriteRecordsResponse);
+  rpc ReadDataset(ReadDatasetRequest) returns (stream DatasetBatch);
+  rpc Publish(stream PublishRequest) returns (PublishResponse);
+}
+
+message Empty {}
+message DatasetRequest { string dataset_id = 1; }
+message Dataset {
+  string dataset_id = 1;
+  uint32 schema_version = 2;
+}
+message ListDatasetsResponse { repeated Dataset datasets = 1; }
+message DatasetSchemaResponse {
+  Dataset dataset = 1;
+  bytes arrow_schema = 2;
+  bytes write_arrow_schema = 3;
+}
+message SeasonSummary {
+  optional string season = 1;
+  int64 matches = 2;
+  int64 with_odds = 3;
+  string first_date = 4;
+  string last_date = 5;
+}
+message DatasetSummaryResponse {
+  int64 matches = 1;
+  int64 leagues = 2;
+  optional string first_date = 3;
+  optional string last_date = 4;
+  optional string imported_at = 5;
+  repeated SeasonSummary seasons = 6;
+}
+message Filters {
+  optional string date_from = 1;
+  optional string date_to = 2;
+  optional string season = 3;
+  optional string search = 4;
+}
+message QueryRecordsRequest {
+  string dataset_id = 1;
+  Filters filters = 2;
+  int32 limit = 3;
+  int64 offset = 4;
+}
+message QueryRecordsResponse {
+  bytes arrow_ipc = 1;
+  int64 count = 2;
+}
+message ReadRecordsRequest {
+  string dataset_id = 1;
+  Filters filters = 2;
+  optional int64 max_records = 3;
+}
+// Every message contains a complete Arrow IPC stream, including its schema.
+message RecordBatch {
+  bytes arrow_ipc = 1;
+  int64 count = 2;
+}
+message WriteRecordsRequest {
+  string dataset_id = 1;
+  bytes arrow_ipc = 2;
+  // Required final message, sent only after the producer finishes successfully.
+  bool commit = 3;
+}
+message WriteRecordsResponse {
+  int64 loaded = 1;
+  int64 new = 2;
+}
+
+// Queries contain bounded structured filters, never SQL or table names.
+message ReadDatasetRequest {
+  string dataset_id = 1;
+  string query_json = 2;
+  optional int64 snapshot_id = 3;
+}
+message DatasetBatch {
+  bytes arrow_ipc = 1;
+  int64 count = 2;
+  int64 revision = 3;
+  int64 snapshot_id = 4;
+  // Latest snapshot in which this dataset's table changed; stable until the
+  // next write to the dataset, so consumers can skip unchanged tables without
+  // rescanning S3.
+  int64 dataset_snapshot_id = 5;
+}
+// First message is the header; last message is commit=true with no payload.
+// Consecutive payload messages with the same mutation_id share one staging table.
+message PublishRequest {
+  string publication_id = 1;
+  string scope = 2;
+  optional int64 snapshot_id = 3;
+  uint32 mutation_id = 4;
+  string dataset_id = 5;
+  uint32 schema_version = 6;
+  string operation = 7;
+  string filters_json = 8;
+  bytes arrow_ipc = 9;
+  bool commit = 10;
+  // Queries actually read from snapshot_id: optimistic write dependencies.
+  repeated ReadDatasetRequest reads = 11;
+}
+message PublishResponse {
+  int64 revision = 1;
+  string ids_json = 2;
+}

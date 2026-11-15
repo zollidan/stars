@@ -1,4 +1,4 @@
-# Local PostgreSQL for development: docker compose up -d
+# Local PostgreSQL and the STARS host. `docker compose up --build`.
 services:
   db:
     image: postgres:18-alpine
@@ -13,7 +13,27 @@ services:
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "stars"]
       interval: 2s
-      retries: 15
+      retries: 20
+
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__Stars: Host=db;Port=5432;Database=stars;Username=stars;Password=stars
+      Stars__Demo__FixtureRoot: fixtures
+      # Point this at a real EVA DataHub to use the gRPC connector instead of the
+      # local Arrow-shaped fixture. Keep the token in an environment variable.
+      Stars__Demo__EvaAddress: ${STARS_EVA_ADDRESS:-}
+      DATAHUB_SERVICE_TOKEN: ${DATAHUB_SERVICE_TOKEN:-}
+    ports:
+      - "5080:5080" # HTTP API + admin UI
+      - "5081:5081" # gRPC (cleartext h2c; trusted local network only)
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/5080'"]
+      interval: 3s
+      retries: 30
 
 volumes:
   pgdata:

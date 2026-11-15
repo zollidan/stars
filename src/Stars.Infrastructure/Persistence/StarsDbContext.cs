@@ -39,6 +39,8 @@ public class StarsDbContext(DbContextOptions<StarsDbContext> options) : DbContex
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        // Fuzzy name search stays in PostgreSQL. No in-memory full scan is required.
+        modelBuilder.HasPostgresExtension("pg_trgm");
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(StarsDbContext).Assembly);
     }
 }

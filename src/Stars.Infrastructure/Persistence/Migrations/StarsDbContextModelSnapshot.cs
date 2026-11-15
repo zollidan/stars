@@ -21,6 +21,7 @@ namespace Stars.Infrastructure.Persistence.Migrations
                 .HasAnnotation("ProductVersion", "10.0.0")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
+            NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "pg_trgm");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
             modelBuilder.Entity("Stars.Domain.Entities.EntityLink", b =>
@@ -196,6 +197,12 @@ namespace Stars.Infrastructure.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_master_entities");
 
+                    b.HasIndex("NormalizedName")
+                        .HasDatabaseName("ix_master_entities_name_trgm");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("NormalizedName"), "gin");
+                    NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("NormalizedName"), new[] { "gin_trgm_ops" });
+
                     b.HasIndex("EntityKind", "SportCode")
                         .HasDatabaseName("ix_master_kind");
 
@@ -318,6 +325,9 @@ namespace Stars.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("SourceEntityId", "Status")
                         .HasDatabaseName("ix_candidate_source_status");
+
+                    b.HasIndex("Status", "GeneratedAt")
+                        .HasDatabaseName("ix_candidate_review");
 
                     b.ToTable("match_candidates", null, t =>
                         {
@@ -682,6 +692,12 @@ namespace Stars.Infrastructure.Persistence.Migrations
 
                     b.HasAlternateKey("SourceFeedId", "EntityKind", "SourceKey")
                         .HasName("uq_source_identity");
+
+                    b.HasIndex("NormalizedName")
+                        .HasDatabaseName("ix_source_entities_name_trgm");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("NormalizedName"), "gin");
+                    NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("NormalizedName"), new[] { "gin_trgm_ops" });
 
                     b.HasIndex("EntityKind", "SportCode")
                         .HasDatabaseName("ix_source_kind");

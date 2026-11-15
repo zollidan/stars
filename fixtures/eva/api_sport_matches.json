@@ -1,0 +1,45 @@
+{
+  "snapshotId": 42,
+  "rows": [
+    {
+      "match_id": 5001,
+      "match_date": "2026-11-20",
+      "kickoff_time": "2026-11-20T18:00:00Z",
+      "league": "Russian Premier League",
+      "home_team_id": 10,
+      "home_team_name": "Спартак Москва",
+      "away_team_id": 20,
+      "away_team_name": "Зенит Санкт-Петербург"
+    },
+    {
+      "match_id": 5002,
+      "match_date": "2026-11-23",
+      "kickoff_time": "2026-11-23T17:00:00Z",
+      "league": "Ukrainian Premier League",
+      "home_team_id": 30,
+      "home_team_name": "Динамо",
+      "away_team_id": 40,
+      "away_team_name": "Шахтёр"
+    },
+    {
+      "match_id": 5003,
+      "match_date": "2026-11-24",
+      "kickoff_time": "2026-11-24T18:00:00Z",
+      "league": "Russian Premier League",
+      "home_team_id": 50,
+      "home_team_name": "ЦСКА",
+      "away_team_id": 60,
+      "away_team_name": "Рубин"
+    },
+    {
+      "match_id": 5004,
+      "match_date": "2026-11-27",
+      "kickoff_time": "2026-11-27T18:00:00Z",
+      "league": "Russian Premier League",
+      "home_team_id": 10,
+      "home_team_name": "Спартак Москва",
+      "away_team_id": 50,
+      "away_team_name": "ЦСКА"
+    }
+  ]
+}

@@ -2,6 +2,9 @@
   <Folder Name="/src/">
     <Project Path="src/Stars.Api/Stars.Api.csproj" />
     <Project Path="src/Stars.Application/Stars.Application.csproj" />
+    <Project Path="src/Stars.Connectors.Abstractions/Stars.Connectors.Abstractions.csproj" />
+    <Project Path="src/Stars.Connectors.Eva/Stars.Connectors.Eva.csproj" />
+    <Project Path="src/Stars.Connectors.Rest/Stars.Connectors.Rest.csproj" />
     <Project Path="src/Stars.Domain/Stars.Domain.csproj" />
     <Project Path="src/Stars.Infrastructure/Stars.Infrastructure.csproj" />
   </Folder>

@@ -47,6 +47,11 @@ public class SourceEntityConfiguration : IEntityTypeConfiguration<SourceEntity>
             .HasName("uq_source_identity");
 
         builder.HasIndex(x => new { x.EntityKind, x.SportCode }).HasDatabaseName("ix_source_kind");
+
+        builder.HasIndex(x => x.NormalizedName)
+            .HasDatabaseName("ix_source_entities_name_trgm")
+            .HasMethod("gin")
+            .HasOperators("gin_trgm_ops");
     }
 }
 

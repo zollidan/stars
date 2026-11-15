@@ -45,6 +45,8 @@ public class MatchCandidateConfiguration : IEntityTypeConfiguration<MatchCandida
 
         builder.HasIndex(x => new { x.SourceEntityId, x.Status }).HasDatabaseName("ix_candidate_source_status");
 
+        builder.HasIndex(x => new { x.Status, x.GeneratedAt }).HasDatabaseName("ix_candidate_review");
+
         builder.ToTable(table => table.HasCheckConstraint(
             "ck_match_candidates_single_target",
             "num_nonnulls(candidate_source_entity_id, candidate_master_entity_id) = 1"));

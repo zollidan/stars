@@ -17,7 +17,16 @@ TestResults/
 coverage*.xml
 coverage*.json
 
+# Frontend
+node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+src/Stars.Api/wwwroot/
+
 # Local secrets and local data
 appsettings.Local.json
 .env
 *.duckdb
+*.dump

@@ -7,21 +7,31 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Protobuf Include="Protos\greet.proto" GrpcServices="Server" />
+    <Protobuf Include="Protos\stars.proto" GrpcServices="Both" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Grpc.AspNetCore" Version="2.64.0" />
+    <PackageReference Include="Grpc.AspNetCore" Version="2.71.0" />
+    <PackageReference Include="Grpc.Tools" Version="2.71.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.21.0" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.21.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.21.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.21.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Stars.Infrastructure\Stars.Infrastructure.csproj" />
     <ProjectReference Include="..\Stars.Application\Stars.Application.csproj" />
     <ProjectReference Include="..\Stars.Domain\Stars.Domain.csproj" />
+    <ProjectReference Include="..\Stars.Connectors.Rest\Stars.Connectors.Rest.csproj" />
+    <ProjectReference Include="..\Stars.Connectors.Eva\Stars.Connectors.Eva.csproj" />
   </ItemGroup>
 
 </Project>

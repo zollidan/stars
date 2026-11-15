@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+.vs/
+.idea/
+.git/
+**/node_modules/
+frontend/dist/
+src/Stars.Api/wwwroot/
+*.duckdb
+*.dump
+**/TestResults/
