@@ -1,5 +1,5 @@
 @startuml STARS_Request_Flows
-title STARS prototype — request flows: who calls what
+title STARS — request flows: who calls what
 
 skinparam wrapWidth 260
 actor "Operator" as OP

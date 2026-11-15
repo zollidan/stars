@@ -3,7 +3,7 @@ namespace Stars.Application.Matching;
 /// <summary>
 /// Similarity functions on ASCII normal forms. Values are 0..1, where 1 is identical.
 /// The implementation follows the two rapidfuzz-compatible measures used by the
-/// previous STARS prototype: plain indel ratio and token-set ratio.
+/// previous STARS implementation: plain indel ratio and token-set ratio.
 /// </summary>
 public static class NameSimilarity
 {

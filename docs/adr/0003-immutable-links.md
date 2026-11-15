@@ -2,7 +2,7 @@
 
 - Status: accepted
 - Date: 2026-11-15
-- Context: prototype v0.1
+- Context: product v1
 
 ## Decision
 

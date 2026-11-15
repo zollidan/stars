@@ -1,5 +1,5 @@
 @startuml STARS_Deployment
-title STARS prototype — deployment
+title STARS — deployment
 
 skinparam wrapWidth 250
 left to right direction
@@ -22,7 +22,6 @@ node "Docker host / single VM" as HOST {
     }
     database "stars-postgres container\nPostgreSQL 18 + pg_trgm" as DB
     folder "pgdata volume" as VOL
-    folder "fixtures/\nEVA-shaped + REST snapshots" as FIX
   }
 }
 
@@ -38,7 +37,6 @@ GRPC --> DB : Npgsql
 WORKER --> DB : jobs, links, evidence
 CONN --> EVA : gRPC ReadDataset\nbounded snapshot
 CONN --> REST : HTTPS / JSON\nsnapshot
-CONN --> FIX : local demo mode
 DB --> VOL : durable state
 API ..> OTLP : metrics\nOTEL_EXPORTER_OTLP_ENDPOINT
 
@@ -49,8 +47,7 @@ note right of API
 end note
 
 note bottom of DB
-  Local prototype boundary:
-  admin UI/API has no authentication.
+  Admin UI/API has no authentication.
   Use a trusted network or reverse proxy.
 end note
 

@@ -1,4 +1,4 @@
-# STARS architecture (prototype v0.1)
+# STARS architecture (production v1)
 
 PlantUML diagrams live in [docs/diagrams](diagrams/README.md):
 
@@ -14,7 +14,7 @@ PlantUML diagrams live in [docs/diagrams](diagrams/README.md):
 flowchart LR
     subgraph Providers
         EVA[EVA DataHub<br/>gRPC ReadDataset + Arrow]
-        REST[REST / JSON fixture]
+        REST[REST provider<br/>snapshot endpoint]
     end
 
     subgraph Host["Stars.Api"]
@@ -40,9 +40,13 @@ flowchart LR
     UI --> API
 ```
 
-One process is enough for the prototype: ASP.NET Core serves gRPC, HTTP, static admin
+One process is enough for a standard deployment: ASP.NET Core serves gRPC, HTTP, static admin
 assets and one `BackgroundService` worker. The job queue is in PostgreSQL, so a separate
 worker process can be added later without changing semantics.
+
+Startup migrates the database and reconciles the declarative `Stars:Providers`
+configuration. Reconciliation creates or updates provider connections and feeds by name
+and feed key; it never touches cursors, links, candidates or sync history.
 
 ## 2. Source ingestion
 
@@ -67,7 +71,7 @@ does not look like a change.
 
 ## 3. Data model
 
-The prototype reuses the Source Registry / Master Registry ERD:
+The production model reuses the Source Registry / Master Registry ERD:
 
 | Table | Role |
 | --- | --- |
@@ -212,14 +216,14 @@ links return 409, and invalid review transitions return 400. Unexpected failures
 
 - Provider token is resolved from an environment variable named in
   `provider_connections.auth_secret_ref`; it is never persisted.
-- Admin endpoints have no authentication in this prototype. Put them behind a trusted
+- Admin endpoints have no authentication in this release. Put them behind a trusted
   network or a reverse proxy before exposing them.
 - gRPC uses cleartext h2c for local Compose. Use TLS between hosts.
 - EVA and its schema/proto are not modified. The connector only calls `ReadDataset`.
 
 ## 11. Scaling notes
 
-The prototype is intentionally single-writer/single-worker. The next safe steps are:
+The deployment is intentionally single-writer/single-worker. The next safe steps are:
 separate worker process, per-feed advisory locks, listing partitioning for very large
 providers, and a read replica for search. None of them require changing the connector
 contract or the canonical-link invariants.

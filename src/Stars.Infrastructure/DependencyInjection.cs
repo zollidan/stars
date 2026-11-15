@@ -4,7 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Stars.Application.Configuration;
 using Stars.Connectors.Abstractions;
-using Stars.Infrastructure.Demo;
+using Stars.Infrastructure.Bootstrap;
 using Stars.Infrastructure.Ingestion;
 using Stars.Infrastructure.Jobs;
 using Stars.Infrastructure.Matching;
@@ -49,7 +49,7 @@ public static class DependencyInjection
         services.AddSingleton<MatchingProcessor>();
         services.AddSingleton<RegistryQueryService>();
         services.AddSingleton<ReviewService>();
-        services.AddScoped<DemoSeeder>();
+        services.AddScoped<ProviderBootstrapService>();
 
         services.AddHostedService<ProcessingJobWorker>();
 

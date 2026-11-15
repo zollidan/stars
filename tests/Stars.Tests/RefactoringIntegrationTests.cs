@@ -136,7 +136,7 @@ public partial class StarsEndToEndTests
     {
         await using var factory = CreateFactory(await fixture.CreateDatabaseAsync());
         using var client = factory.CreateClient();
-        await WaitForWorkerAsync(client);
+        await SyncInitialAsync(client);
         using var review = JsonDocument.Parse(await client.GetStringAsync("/api/review"));
         var candidate = review.RootElement.EnumerateArray().First();
         var candidateId = candidate.GetProperty("candidateId").GetString();
@@ -176,8 +176,7 @@ public partial class StarsEndToEndTests
     {
         await using var factory = CreateFactory(await fixture.CreateDatabaseAsync()).WithWebHostBuilder(builder =>
         {
-            builder.UseSetting("Stars:Demo:AutoSync", "false");
-            builder.UseSetting("Stars:Demo:EvaMaxRecords", "3");
+            builder.UseSetting("Stars:Providers:eva:Settings:maxRecords", "3");
             builder.UseSetting("Stars:MaxRecordsPerSnapshot", "5");
         });
         using var client = factory.CreateClient();
@@ -199,7 +198,6 @@ public partial class StarsEndToEndTests
         await using var factory = CreateFactoryWithoutWorker(await fixture.CreateDatabaseAsync())
             .WithWebHostBuilder(builder =>
             {
-                builder.UseSetting("Stars:Demo:AutoSync", "false");
                 builder.UseSetting("Stars:MaxRecordsPerSnapshot", "1");
                 builder.ConfigureServices(services =>
                 {
@@ -220,7 +218,7 @@ public partial class StarsEndToEndTests
 
     private sealed class OversizedConnector : IConnector
     {
-        public string Key => "rest.fixture";
+        public string Key => TestSnapshotConnector.ConnectorKey;
         public ConnectorCapabilities Capabilities => ConnectorCapabilities.SnapshotOnly();
 
         public async IAsyncEnumerable<SourceBatch> ReadSnapshotAsync(ConnectorContext context,

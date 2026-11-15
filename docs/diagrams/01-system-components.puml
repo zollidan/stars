@@ -1,5 +1,5 @@
 @startuml STARS_System_Components
-title STARS prototype — system components
+title STARS — system components
 
 skinparam componentStyle rectangle
 skinparam wrapWidth 240
@@ -7,8 +7,7 @@ left to right direction
 
 package "External providers" {
   component "EVA DataHub\nread-only gRPC\nReadDataset + Arrow IPC" as EVA
-  component "REST / JSON provider\nsnapshot endpoint" as REST
-  file "fixtures/\nlocal demo snapshots" as FIXTURES
+  component "REST provider\nGET /snapshot" as REST
 }
 
 package "STARS API process" {
@@ -29,7 +28,6 @@ cloud "OTLP collector\noptional" as OTLP
 
 EVA --> CONNECTORS : gRPC / Arrow
 REST --> CONNECTORS : HTTP / JSON
-FIXTURES --> CONNECTORS : fixture mode
 CONNECTORS --> SYNC : SourceBatch pages
 SYNC --> INGEST : one page = one transaction
 INGEST --> PG : source_entities/events\ncursor + jobs
@@ -46,7 +44,7 @@ GRPC --> QUERY
 HTTP ..> OTLP : metrics (when configured)
 
 note right of WORKER
-  One worker per process in the prototype.
+  One worker per process by default.
   A second worker can reuse the same queue
   contract without changing matching.
 end note

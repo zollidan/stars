@@ -4,22 +4,20 @@ A small, self-hosted registry that matches the **same sports team** across indep
 providers and keeps the reasoning behind every link. EVA DataHub is one supported source,
 not a dependency of the core.
 
-The prototype demonstrates the full path:
-
 ```text
 EVA DataHub (gRPC/Arrow) ─┐
                           ├─→ Source Registry → local name index → candidates
-REST provider (fixture) ──┘                              │
+REST provider (snapshot) ─┘                              │
                                                          ├─ auto-link (high confidence)
                                                          └─ review (ambiguous/conflicting)
                                                                  │
                                                     canonical team + audit trail
 ```
 
-## What is proven
+## What it guarantees
 
-- Two independent connectors feed the same registry: **EVA DataHub** and a **REST/fixture**
-  provider.
+- Two independent connectors can feed the same registry: **EVA DataHub** and any provider
+  exposing the documented **REST snapshot** shape.
 - `Spartak Moscow` and `Спартак Москва` end up on one canonical team card.
 - Ambiguous `Динамо` is **not** merged automatically; it waits in Review.
 - Replaying the same snapshot creates no duplicates and does not re-run matching.
@@ -29,6 +27,8 @@ REST provider (fixture) ──┘                              │
 ## Quick start
 
 ```bash
+STARS_EVA_ADDRESS=http://datahub:50051 \
+DATAHUB_SERVICE_TOKEN=... \
 docker compose up --build
 ```
 
@@ -36,11 +36,12 @@ docker compose up --build
 - HTTP API: <http://localhost:5080/api/sources>
 - Interactive HTTP API reference: <http://localhost:5080/scalar>
 - OpenAPI document: <http://localhost:5080/openapi/v1.json>
-- Health: <http://localhost:5080/health/live>, `/health/ready`
+- Health: <http://localhost:5080/health/live>, `/health/ready`, `/health/db`
 - gRPC (cleartext h2c): `http://localhost:5081`
 
-The first startup applies migrations, seeds two demo providers from `fixtures/`, imports
-both snapshots and processes the matching queue. No SQL is required.
+The first startup applies migrations and reconciles providers and feeds declared under
+`Stars:Providers`. There is no demo data and no automatic import: open **Sources** and
+press **Sync**, or call `POST /api/sync`, when you want a bounded snapshot.
 
 For local development without Docker:
 
@@ -56,19 +57,64 @@ dotnet run --project src/Stars.Api
 The API reads the default local connection string from `appsettings.Development.json`.
 The Vite dev server (`cd frontend && npm run dev`) proxies `/api` to port 5080.
 
-## Demo walkthrough
+## Provider configuration
 
-1. Open **Sources**. There are two feeds: `EVA DataHub / eva-matches` and
-   `API Sport (fixture) / api-sport-snapshot`.
-2. Open **Directory**. Four canonical teams are already linked across both providers.
-   `Spartak Moscow` has both `Spartak Moscow` (REST) and `Спартак Москва` (EVA) attached.
-3. Open **Review**. `Динамо` has two equally plausible candidates
-   (`Dynamo Moscow`, `Dinamo Minsk`), so it stays unresolved.
-4. Confirm one `Динамо` candidate. A canonical team is created (or reused), the link and
-   decision are written in one transaction, and the other pending candidate is superseded.
-5. Press **Sync** again. Record counts, links and review candidates do not change.
+Providers and feeds are declared once in configuration and reconciled on startup. Existing
+cursors, links and sync history are never changed by reconciliation. The shipped
+Development and Production settings define one EVA DataHub provider; override any value
+with environment variables in production.
 
-Useful HTTP calls:
+```json
+{
+  "Stars": {
+    "Providers": {
+      "eva": {
+        "Name": "EVA DataHub",
+        "ConnectorKey": "eva.datahub",
+        "BaseUrl": "http://datahub:50051",
+        "AuthSecretRef": "DATAHUB_SERVICE_TOKEN",
+        "Enabled": true,
+        "Settings": {
+          "dataset": "api_sport_matches_v1"
+        },
+        "Feeds": {
+          "api-sport": {
+            "EntityKind": "match",
+            "DatasetRef": "api_sport_matches_v1",
+            "SyncMode": "snapshot",
+            "Enabled": true,
+            "Config": {}
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+Useful environment overrides:
+
+```bash
+Stars__Providers__eva__BaseUrl=http://datahub:50051
+Stars__Providers__eva__Settings__dataset=api_sport_matches_v1
+DATAHUB_SERVICE_TOKEN=...
+```
+
+Add one entry under `Feeds` for each EVA dataset (`api_sport_matches_v1`, `odds_v1`,
+`winline_odds_v1`, `marathon_odds_v1`). A feed's `Config.dataset` overrides
+`Settings.dataset`, so one DataHub connection and token can serve several feeds. See the
+[schema mappings and identity limits](docs/connector-contract.md#6-eva-datahub-connector).
+
+A REST provider is configured the same way with connector key `rest.snapshot`. It calls
+`GET {BaseUrl}/snapshot`; see the
+[REST snapshot contract](docs/connector-contract.md#7-rest-snapshot-connector).
+
+Provider secrets are stored only as **references** (`provider_connections.auth_secret_ref`).
+`provider_connections.settings` never contains an API key.
+
+## HTTP API
+
+Useful calls:
 
 ```bash
 curl localhost:5080/api/sources
@@ -85,6 +131,9 @@ curl -X POST localhost:5080/api/review/<candidateId>/reject \
 
 gRPC exposes `ResolveBySourceId`, `GetMasterEntity` and `ListMatchesForReview`
 (`src/Stars.Api/Protos/stars.proto`).
+
+The admin UI and API have no built-in authentication. Deploy behind a trusted network or
+an authenticating reverse proxy.
 
 ## Container image and GitHub Actions
 
@@ -109,7 +158,8 @@ services:
     image: ghcr.io/zollidan/stars:latest
     environment:
       ConnectionStrings__Stars: Host=postgres;Database=stars;Username=stars;Password=${STARS_DB_PASSWORD}
-      Stars__Demo__Enabled: "false"
+      Stars__Providers__eva__BaseUrl: http://datahub:50051
+      DATAHUB_SERVICE_TOKEN: ${DATAHUB_SERVICE_TOKEN}
     ports:
       - "5080:5080"
       - "5081:5081"
@@ -132,24 +182,19 @@ make the package public if anonymous pulls are intended.
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `ConnectionStrings__Stars` | local dev value | PostgreSQL connection string |
-| `Stars__AutoMigrate` | `true` | Apply EF migrations at startup |
+| `Stars__AutoMigrate` | `true` | Apply EF migrations and provider configuration at startup |
 | `Stars__MaxRecordsPerSnapshot` | `5000` | Hard ceiling on input snapshot records per run (match rows for EVA) |
-| `Stars__Demo__Enabled` | `true` | Seed demo providers on an empty database |
-| `Stars__Demo__AutoSync` | `true` | Run the first demo import before the worker starts |
-| `Stars__Demo__FixtureRoot` | `fixtures` | Fixture directory |
-| `Stars__Demo__EvaAddress` | empty | Real DataHub address; empty keeps EVA in local fixture mode |
-| `Stars__Demo__EvaTokenEnvironmentVariable` | `DATAHUB_SERVICE_TOKEN` | Name of the env var holding the bearer token |
+| `Stars__WorkerPollMilliseconds` | `750` | Idle polling interval of the matching worker |
+| `Stars__JobBatchSize` | `4` | Matching jobs processed per worker iteration |
+| `Stars__Providers__<key>__*` | see above | Declarative provider and feed definitions |
 | `DATAHUB_SERVICE_TOKEN` | — | EVA DataHub bearer token, never stored in PostgreSQL |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | empty | Enables the OTLP metrics exporter when set |
 
-Provider secrets are stored only as **references** (`provider_connections.auth_secret_ref`).
-`provider_connections.settings` never contains an API key.
+Provider settings may also set `maxRecords` to lower the global snapshot ceiling for one
+provider. The sync service rejects oversized pages instead of truncating them.
 
 The EVA connector reads API-Sport (`api_sport_matches_v1`), Fonbet (`odds_v1`),
 Winline (`winline_odds_v1`) and Marathon (`marathon_odds_v1`) from the same DataHub.
-Use a separate feed with `config.dataset` for each source; the demo seeder still creates
-only its original API-Sport and REST demo feeds. See the [schema mappings and identity
-limits](docs/connector-contract.md#6-eva-datahub-connector).
 
 ## Repository layout
 
@@ -158,14 +203,13 @@ src/
   Stars.Api/                     gRPC + HTTP + hosted worker + static admin UI
   Stars.Application/             normalisation, matching engine, hashes, options
   Stars.Domain/                  EF entities
-  Stars.Infrastructure/          Npgsql store, sync, jobs, registry queries
+  Stars.Infrastructure/          Npgsql store, sync, jobs, registry queries, provider bootstrap
   Stars.Connectors.Abstractions/ provider-neutral connector contract
-  Stars.Connectors.Rest/         REST/fixture connector
+  Stars.Connectors.Rest/         REST snapshot connector
   Stars.Connectors.Eva/          EVA DataHub gRPC + Arrow connector
   Stars.Api/Protos/stars.proto   public gRPC read API
 tests/Stars.Tests/               unit + PostgreSQL/Testcontainers end-to-end tests
-fixtures/                        two independent demo snapshots
-docs/                            architecture, connector contract, ADRs, prototype report
+docs/                            architecture, connector contract, ADRs, evaluation
 ```
 
 ## Safety invariants
@@ -192,8 +236,9 @@ TESTCONTAINERS_RYUK_DISABLED=true \
 ```
 
 The first command runs pure unit tests. The second starts PostgreSQL with Testcontainers
-(`postgres:18-alpine`) and verifies the full demo scenario plus replay idempotency.
-On a normal Docker host only `dotnet test tests/Stars.Tests` is needed.
+(`postgres:18-alpine`) and verifies two independent providers, replay idempotency,
+matching, review and the gRPC read API. On a normal Docker host only
+`dotnet test tests/Stars.Tests` is needed.
 
 Frontend:
 
@@ -225,11 +270,9 @@ shape, current precision/recall baseline and the CI corpus extracted from it.
 - [Legacy team-directory evaluation](docs/legacy-eval.md)
 - [Performance and load testing](docs/performance.md)
 - [Connector contract](docs/connector-contract.md)
-- [Prototype report](docs/prototype-report.md)
 - [ADR-0001: PostgreSQL + pg_trgm](docs/adr/0001-postgres-pg-trgm.md)
 - [ADR-0002: no automatic EVA polling](docs/adr/0002-no-automatic-eva-polling.md)
 - [ADR-0003: immutable links and review](docs/adr/0003-immutable-links.md)
-- [Original prototype plan](STARS_PROTOTYPE_PLAN.md)
 
 ## Intentionally out of scope
 

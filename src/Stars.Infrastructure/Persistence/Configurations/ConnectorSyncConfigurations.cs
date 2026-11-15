@@ -30,6 +30,7 @@ public class ProviderConnectionConfiguration : IEntityTypeConfiguration<Provider
         builder.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()").IsRequired();
 
         builder.HasIndex(x => x.ConnectorKey).HasDatabaseName("ix_providers_connector");
+        builder.HasIndex(x => x.Name).IsUnique().HasDatabaseName("ux_provider_connections_name");
     }
 }
 

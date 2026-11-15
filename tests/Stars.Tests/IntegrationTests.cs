@@ -4,10 +4,12 @@ using System.Text.Json;
 using Grpc.Net.Client;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using Stars.Api.Grpc;
 using Stars.Connectors.Abstractions;
+using Stars.Connectors.Rest;
 using Stars.Domain.Entities;
 using Stars.Infrastructure.Ingestion;
 using Stars.Infrastructure.Persistence;
@@ -63,16 +65,13 @@ public sealed class PostgresCollection : ICollectionFixture<PostgresContainerFix
 [Collection("postgres")]
 public partial class StarsEndToEndTests(PostgresContainerFixture fixture)
 {
-    private static string FixtureRoot =>
-        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../fixtures"));
-
     [Fact]
-    public async Task Demo_scenario_links_spartak_and_reviews_dynamo()
+    public async Task Two_providers_link_spartak_and_review_dynamo()
     {
         var connectionString = await fixture.CreateDatabaseAsync();
         await using var factory = CreateFactory(connectionString);
         var client = factory.CreateClient();
-        await WaitForWorkerAsync(client);
+        await SyncInitialAsync(client);
 
         using var directory = JsonDocument.Parse(await client.GetStringAsync("/api/directory"));
         var masters = directory.RootElement.EnumerateArray().ToArray();
@@ -87,7 +86,7 @@ public partial class StarsEndToEndTests(PostgresContainerFixture fixture)
             source => source.GetProperty("providerName").GetString() == "EVA DataHub");
         Assert.Contains(
             spartak.GetProperty("sources").EnumerateArray(),
-            source => source.GetProperty("providerName").GetString() == "API Sport (fixture)");
+            source => source.GetProperty("providerName").GetString() == "API Sport");
 
         using var review = JsonDocument.Parse(await client.GetStringAsync("/api/review"));
         var reviewItems = review.RootElement.EnumerateArray().ToArray();
@@ -96,7 +95,7 @@ public partial class StarsEndToEndTests(PostgresContainerFixture fixture)
 
         using var sources = JsonDocument.Parse(await client.GetStringAsync("/api/sources"));
         var evaFeed = sources.RootElement.EnumerateArray()
-            .Single(source => source.GetProperty("connectorKey").GetString() == "eva.datahub")
+            .Single(source => source.GetProperty("feedKey").GetString() == "eva-matches")
             .GetProperty("sourceFeedId").GetString();
 
         using var resolved = JsonDocument.Parse(await client.GetStringAsync(
@@ -112,7 +111,7 @@ public partial class StarsEndToEndTests(PostgresContainerFixture fixture)
         var connectionString = await fixture.CreateDatabaseAsync();
         await using var factory = CreateFactory(connectionString);
         var client = factory.CreateClient();
-        await WaitForWorkerAsync(client);
+        await SyncInitialAsync(client);
 
         var before = await SnapshotAsync(client);
 
@@ -136,7 +135,7 @@ public partial class StarsEndToEndTests(PostgresContainerFixture fixture)
         var connectionString = await fixture.CreateDatabaseAsync();
         await using var factory = CreateFactory(connectionString);
         var client = factory.CreateClient();
-        await WaitForWorkerAsync(client);
+        await SyncInitialAsync(client);
 
         using var review = JsonDocument.Parse(await client.GetStringAsync("/api/review"));
         var candidate = review.RootElement.EnumerateArray().Single(item =>
@@ -177,11 +176,11 @@ public partial class StarsEndToEndTests(PostgresContainerFixture fixture)
         var connectionString = await fixture.CreateDatabaseAsync();
         await using var factory = CreateFactory(connectionString);
         var client = factory.CreateClient();
-        await WaitForWorkerAsync(client);
+        await SyncInitialAsync(client);
 
         using var sources = JsonDocument.Parse(await client.GetStringAsync("/api/sources"));
         var evaFeed = sources.RootElement.EnumerateArray()
-            .Single(source => source.GetProperty("connectorKey").GetString() == "eva.datahub")
+            .Single(source => source.GetProperty("feedKey").GetString() == "eva-matches")
             .GetProperty("sourceFeedId").GetString()!;
 
         using var channel = GrpcChannel.ForAddress(
@@ -219,7 +218,7 @@ public partial class StarsEndToEndTests(PostgresContainerFixture fixture)
         var provider = new ProviderConnection
         {
             Name = "delayed-test",
-            ConnectorKey = "rest.fixture",
+            ConnectorKey = RestSnapshotConnector.ConnectorKey,
             Settings = JsonSerializer.SerializeToDocument(new { }),
             IsEnabled = true,
             CreatedAt = DateTimeOffset.UtcNow,
@@ -289,6 +288,13 @@ public partial class StarsEndToEndTests(PostgresContainerFixture fixture)
         return new IdempotencySnapshot(masterIds, linkIds, reviewIds, entityCounts);
     }
 
+    private static async Task SyncInitialAsync(HttpClient client)
+    {
+        using var response = await client.PostAsync("/api/sync", null);
+        response.EnsureSuccessStatusCode();
+        await WaitForWorkerAsync(client);
+    }
+
     private static async Task WaitForWorkerAsync(HttpClient client)
     {
         for (var attempt = 0; attempt < 100; attempt++)
@@ -316,9 +322,16 @@ public partial class StarsEndToEndTests(PostgresContainerFixture fixture)
         {
             builder.UseSetting("ConnectionStrings:Stars", connectionString);
             builder.UseSetting("Stars:AutoMigrate", "true");
-            builder.UseSetting("Stars:Demo:Enabled", "true");
-            builder.UseSetting("Stars:Demo:AutoSync", "true");
-            builder.UseSetting("Stars:Demo:FixtureRoot", FixtureRoot);
-            builder.UseEnvironment("Development");
+            builder.UseSetting("Stars:Providers:eva:Name", "EVA DataHub");
+            builder.UseSetting("Stars:Providers:eva:ConnectorKey", TestSnapshotConnector.ConnectorKey);
+            builder.UseSetting("Stars:Providers:eva:Settings:dataset", "api_sport_matches_v1");
+            builder.UseSetting("Stars:Providers:eva:Feeds:eva-matches:EntityKind", "match");
+            builder.UseSetting("Stars:Providers:eva:Feeds:eva-matches:SyncMode", "snapshot");
+            builder.UseSetting("Stars:Providers:rest:Name", "API Sport");
+            builder.UseSetting("Stars:Providers:rest:ConnectorKey", TestSnapshotConnector.ConnectorKey);
+            builder.UseSetting("Stars:Providers:rest:Feeds:api-sport-snapshot:EntityKind", "match");
+            builder.UseSetting("Stars:Providers:rest:Feeds:api-sport-snapshot:SyncMode", "snapshot");
+            builder.ConfigureServices(services => services.AddSingleton<IConnector, TestSnapshotConnector>());
+            builder.UseEnvironment("Testing");
         });
 }

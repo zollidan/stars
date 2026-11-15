@@ -33,7 +33,7 @@ public class ApiDocumentationTests
 
         using var document = JsonDocument.Parse(await client.GetStringAsync("/openapi/v1.json"));
         var paths = document.RootElement.GetProperty("paths");
-        Assert.Equal(12, paths.EnumerateObject().Count());
+        Assert.Equal(11, paths.EnumerateObject().Count());
         var sources = paths.GetProperty("/api/sources").GetProperty("get");
         Assert.Equal("Sources", sources.GetProperty("tags")[0].GetString());
         Assert.True(sources.GetProperty("responses").GetProperty("200").TryGetProperty("content", out _));

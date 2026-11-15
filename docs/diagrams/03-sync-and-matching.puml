@@ -1,5 +1,5 @@
 @startuml STARS_Sync_And_Matching
-title STARS prototype — sync and matching algorithm
+title STARS — sync and matching algorithm
 
 skinparam wrapWidth 320
 start

@@ -136,13 +136,6 @@ public static class StarsEndpoints
             .WithTags("Diagnostics").WithSummary("Get registry, queue and sync counters")
             .Produces<MetricsView>();
 
-        api.MapGet("/providers", (IConfiguration configuration) => TypedResults.Ok(new
-        {
-            evaAddress = configuration["Stars:Demo:EvaAddress"],
-            note = "Provider secrets are referenced by environment variable name, never stored here.",
-        }))
-            .WithTags("Sources").WithSummary("Get provider connection information without secrets");
-
         return app;
     }
 }

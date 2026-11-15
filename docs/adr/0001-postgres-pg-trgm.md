@@ -2,7 +2,7 @@
 
 - Status: accepted
 - Date: 2026-11-15
-- Context: prototype v0.1
+- Context: product v1
 
 ## Decision
 
@@ -15,6 +15,6 @@ for schema/migrations and simple reads.
 
 - One operational dependency; no OpenSearch, Redis, MongoDB, Kafka or graph database.
 - Candidate search stays in the database and does not load all names into process memory.
-- Trigram recall is sufficient for the prototype. A later move to a dedicated search
+- Trigram recall is sufficient for current data volumes. A later move to a dedicated search
   engine is possible without changing the connector or registry contracts.
 - `pg_trgm` is created by an EF migration and required at startup.

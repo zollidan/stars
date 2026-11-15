@@ -1,5 +1,5 @@
 @startuml STARS_Use_Cases
-title STARS prototype — actors, use cases and requests
+title STARS — actors, use cases and requests
 
 skinparam wrapWidth 220
 left to right direction

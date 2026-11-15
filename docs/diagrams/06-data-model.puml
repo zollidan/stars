@@ -1,5 +1,5 @@
 @startuml STARS_Data_Model
-title STARS prototype — core data model
+title STARS — core data model
 
 hide circle
 skinparam linetype ortho

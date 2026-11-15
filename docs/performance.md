@@ -1,4 +1,4 @@
-# STARS — performance и нагрузочное тестирование (v0.1)
+# STARS — performance и нагрузочное тестирование (v1)
 
 Дата: **2026-11-15**  
 Объект: текущий Docker-образ `stars-api:perf` (Release, ASP.NET Core 10) + PostgreSQL 18.  
@@ -24,7 +24,7 @@
 
 | Датасет | Сущности | События | Canonical | Links | Jobs | DB size |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Demo (`fixtures/`) | 16 | 8 | 4 | 8 | 23 | 9.5 MB |
+| Baseline (historical) | 16 | 8 | 4 | 8 | 23 | 9.5 MB |
 | Synthetic auto (500 команд/провайдер) | 1 002 | 1 000 | 500 | 1 000 | 1 522 | 15 MB |
 | Synthetic review (1 000 команд/провайдер) | 2 002 | 2 000 | 0 | 0 | 3 041 | 34 MB |
 
@@ -35,12 +35,7 @@ Synthetic review: имена `Synthetic Club 0000`, `Synthetic Club 0001`, ... �
 похожие. Из-за token-set similarity и margin 2.7% < 3% все пары уходят в review. Это
 **стресс-тест review/candidate/evidence path**, а не оценка качества матчинга.
 
-Генератор: [`scripts/perf/generate-fixtures.py`](../scripts/perf/generate-fixtures.py).
-
-```bash
-python3 scripts/perf/generate-fixtures.py --mode auto --teams 500 --out /tmp/perf-auto
-python3 scripts/perf/generate-fixtures.py --mode near-identical --teams 1000 --out /tmp/perf-review
-```
+Synthetic-наборы были сгенерированы для исторических замеров и в поставку не входят.
 
 ## 3. Потребление в покое
 
@@ -51,11 +46,11 @@ python3 scripts/perf/generate-fixtures.py --mode near-identical --teams 1000 --o
 | `stars-api` | ~0.005 cores | ~127 MB | 43 |
 | `stars-postgres` | ~0.002 cores | ~84 MB | 29 |
 
-При пустом demo-датасете и без нагрузки система практически не потребляет CPU.
+При пустом датасете и без нагрузки система практически не потребляет CPU.
 
 ## 4. Read API: отдельные endpoints
 
-### 4.1 Demo-датасет (16 сущностей, 4 master)
+### 4.1 Базовый датасет (16 сущностей, 4 master)
 
 `hey -z 20s -c 50`, все ответы 200.
 
@@ -87,7 +82,7 @@ p99 уже 79 ms, throughput падает до ~1 050 RPS.
 
 ## 5. Mixed read load
 
-### 5.1 Demo, 5 000 RPS, 30 секунд
+### 5.1 Базовый датасет, 5 000 RPS, 30 секунд
 
 `vegeta attack -rate 5000 -duration 30s -workers 60`, смесь `/sources`, `/directory`,
 `/review`, `/metrics`, `/resolve`, `/directory/{id}`.
@@ -190,7 +185,7 @@ HTTP/2-соединений, не прикладные 5xx. Одиночный �
 
 | Датасет | Записей | Sync avg / max | Startup до ready | Jobs drain | Jobs/s | Итог |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Demo | 24 | ~0.10 s / — | — | 31 ms | — | 4 master, 8 links |
+| Baseline | 24 | ~0.10 s / — | — | 31 ms | — | 4 master, 8 links |
 | Auto 500 | 2 011 | 0.82 s / 0.99 s | 3.25 s | 39.7 s | ~38 | 500 master, 1 000 links, 0 review |
 | Review 1000 | 4 021 | 1.47 s / 1.87 s | 4.65 s | 121.5 s | ~25 | 6 000 pending candidates |
 
@@ -245,7 +240,7 @@ Maximum Pool Size=20
 
 ## 9. Выводы
 
-1. **Read API быстрый** на demo-данных: 7–22 тыс. RPS на endpoint при p99 < 12 ms.
+1. **Read API быстрый** на базовых данных: 7–22 тыс. RPS на endpoint при p99 < 12 ms.
 2. **`/api/directory` не масштабируется линейно**: уже 500 master дают ~1 050 RPS и
    p99 ~79 ms из-за отсутствия пагинации и полного ответа. Это первый кандидат на
    оптимизацию.
@@ -292,9 +287,7 @@ ghz --insecure --proto src/Stars.Api/Protos/stars.proto \
   -d '{"source_feed_id":"<eva-feed-id>","entity_kind":"team","source_key":"team:10"}' \
   127.0.0.1:5085
 
-# 7. Синтетический импорт
-python3 scripts/perf/generate-fixtures.py --mode auto --teams 500 --out /tmp/perf-auto
-# запустить API с -v /tmp/perf-auto:/fixtures:Z и Stars__Demo__FixtureRoot=/fixtures
+# 7. Импорт тестового набора выполняется через настроенный provider/feed
 ```
 
 ## 11. Как измерить CPU именно matching
@@ -361,5 +354,5 @@ LIMIT 24;
   Качество на реальных данных — в [legacy-eval.md](legacy-eval.md).
 - `podman stats` CPU/память сэмплировались раз в 1–2 секунды; p99 и пики —
   приблизительные.
-- Размер ответа `/api/directory` зависит от числа master/links; сравнение demo и
+- Размер ответа `/api/directory` зависит от числа master/links; сравнение базового и
   large корректно только внутри своего датасета.

@@ -1,9 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Npgsql;
 using Stars.Application.Configuration;
-using Stars.Infrastructure.Demo;
-using Stars.Infrastructure.Sync;
+using Stars.Infrastructure.Bootstrap;
 
 namespace Stars.Infrastructure.Persistence;
 
@@ -17,6 +18,7 @@ public static class DatabaseInitialization
             return;
         }
 
+        var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger("Stars.DatabaseInitialization");
         for (var attempt = 1; attempt <= 20; attempt++)
         {
             try
@@ -24,25 +26,22 @@ public static class DatabaseInitialization
                 using var scope = services.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<StarsDbContext>();
                 await db.Database.MigrateAsync();
-                var seeder = scope.ServiceProvider.GetRequiredService<DemoSeeder>();
-                await seeder.SeedAsync(CancellationToken.None);
 
-                // Complete the first demo import before the worker starts. This removes the
-                // startup race where the first provider's jobs run before the second provider
-                // has produced any candidates. Manual syncs remain fully asynchronous.
-                if (starsOptions.Demo is { Enabled: true, AutoSync: true }
-                    && !await db.SourceEntities.AnyAsync())
-                {
-                    var sync = scope.ServiceProvider.GetRequiredService<SourceSyncService>();
-                    await sync.SyncAllEnabledAsync(CancellationToken.None);
-                }
-
+                var bootstrap = scope.ServiceProvider.GetRequiredService<ProviderBootstrapService>();
+                await bootstrap.ApplyAsync(CancellationToken.None);
                 return;
             }
-            catch (Exception) when (attempt < 20)
+            catch (Exception exception) when (attempt < 20 && IsTransient(exception))
             {
+                logger.LogWarning(
+                    exception,
+                    "Database initialization attempt {Attempt} failed; retrying in 2 seconds.",
+                    attempt);
                 await Task.Delay(TimeSpan.FromSeconds(2));
             }
         }
     }
+
+    private static bool IsTransient(Exception exception) =>
+        exception is NpgsqlException or TimeoutException or System.Net.Sockets.SocketException;
 }

@@ -1,4 +1,4 @@
-# Connector contract (v0.1)
+# Connector contract (v1)
 
 A connector is the only place that knows a provider. It depends on
 `Stars.Connectors.Abstractions` and never on the registry, matching engine or database.
@@ -33,7 +33,7 @@ public sealed record ConnectorCapabilities(
     string? Notes = null);
 ```
 
-- **snapshot** — the only mode required by the prototype.
+- **snapshot** — the baseline sync mode.
 - **changes** — optional future `ReadChanges`.
 - **cursor** — a stable resume token for a bounded read or pinned snapshot.
 - **push** — optional future webhook/spool.
@@ -156,7 +156,6 @@ Settings:
 
 ```json
 {
-  "mode": "grpc",
   "address": "http://datahub:50051",
   "dataset": "api_sport_matches_v1",
   "maxRecords": 300
@@ -182,25 +181,21 @@ The gRPC path:
 `SupportsChanges = false` and is never put on a timer. A manual import or a bounded
 administrative run is required. This is deliberate (ADR-0002).
 
-For development, `mode = "fixture"` reads an EVA-shaped JSON file through the same row
-mapping. It exists to exercise the EVA dataset shape without a DataHub server; the gRPC
-path remains the production path.
+## 7. REST snapshot connector
 
-## 7. REST/fixture connector
-
-Key: `rest.fixture`.
+Key: `rest.snapshot`.
 
 Settings:
 
 ```json
 {
-  "fixturePath": "/app/fixtures/rest-provider.json",
   "pageSize": 100
 }
 ```
 
-If `fixturePath` is absent, the connector calls `GET {baseUrl}/snapshot` with the shared
-`HttpClient`.
+The connector calls `GET {baseUrl}/snapshot` with the shared `HttpClient`. The provider
+must return the documented snapshot shape and a stable source key for every entity and
+event. Replays are idempotent because keys do not change.
 
 Snapshot shape:
 
@@ -244,7 +239,7 @@ Entities are emitted before events so event participants always resolve. Checkpo
 1. Create a class library referencing `Stars.Connectors.Abstractions`.
 2. Implement `IConnector`.
 3. Register it once in the composition root.
-4. Add a `provider_connections` row and a `source_feeds` row, or extend the demo seeder.
-5. Add connector-level mapping tests and an end-to-end fixture.
+4. Add the provider and its feeds under `Stars:Providers` in configuration.
+5. Add connector-level mapping tests and an end-to-end test.
 
 No changes to the Source Registry, matching engine or API are required.

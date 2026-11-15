@@ -1,7 +1,7 @@
 # Legacy team-directory evaluation
 
 The old Rust STARS (`team_directory`) dump is a useful labelled corpus. This tool evaluates
-the new normalizer and matcher against it without changing the running demo database.
+the new normalizer and matcher against it without changing the running production database.
 
 ## What is inside the dump
 

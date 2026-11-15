@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Apache.Arrow;
 using ArrowRecordBatch = Apache.Arrow.RecordBatch;
 using Apache.Arrow.Ipc;
@@ -20,8 +19,7 @@ namespace Stars.Connectors.Eva;
 /// compact fixture context; odds and full bookmaker snapshots are never stored.
 ///
 /// DataHub has no safe change-feed contract. This connector therefore never schedules
-/// itself: it runs only for an explicit manual/bounded import. A local EVA-shaped JSON
-/// fixture mode exists for development and tests; it uses the same row mapping.
+/// itself: it runs only for an explicit manual/bounded import.
 /// </summary>
 public sealed class EvaDataHubConnector : IConnector
 {
@@ -60,87 +58,11 @@ public sealed class EvaDataHubConnector : IConnector
         var settings = context.Settings;
         var dataset = GetString(settings, "dataset") ?? ApiSportDataset;
         var columns = ColumnsFor(dataset);
-        var mode = GetString(settings, "mode") ?? "grpc";
-        if (string.Equals(mode, "fixture", StringComparison.OrdinalIgnoreCase))
-        {
-            await foreach (var batch in ReadFixtureAsync(context, settings, dataset, cancellationToken))
-            {
-                yield return batch;
-            }
-
-            yield break;
-        }
 
         await foreach (var batch in ReadGrpcAsync(context, settings, dataset, columns, cancellationToken))
         {
             yield return batch;
         }
-    }
-
-    private static async IAsyncEnumerable<SourceBatch> ReadFixtureAsync(
-        ConnectorContext context,
-        JsonElement settings,
-        string dataset,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        var fixturePath = GetString(settings, "fixturePath")
-            ?? throw new InvalidOperationException("EVA fixture mode requires settings.fixturePath.");
-        var path = Path.IsPathRooted(fixturePath)
-            ? fixturePath
-            : Path.Combine(AppContext.BaseDirectory, fixturePath);
-        if (!File.Exists(path))
-        {
-            path = Path.Combine(Directory.GetCurrentDirectory(), fixturePath);
-        }
-
-        await using var stream = File.OpenRead(path);
-        var fixture = await JsonSerializer.DeserializeAsync<EvaFixture>(
-            stream,
-            new JsonSerializerOptions(JsonSerializerDefaults.Web),
-            cancellationToken)
-            ?? throw new InvalidOperationException($"EVA fixture '{path}' is empty.");
-
-        var isBookmaker = dataset != ApiSportDataset;
-        var rows = (fixture.Rows ?? [])
-            .Select(row => new EvaMatchRow(
-                isBookmaker ? row.EventId : row.MatchId,
-                isBookmaker || row.MatchDate is null
-                    ? null
-                    : new DateTimeOffset(row.MatchDate.Value.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero),
-                isBookmaker ? row.StartTime : row.KickoffTime,
-                dataset == "odds_v1" ? null : row.League,
-                isBookmaker ? null : row.HomeTeamId,
-                isBookmaker ? row.Team1 ?? string.Empty : row.HomeTeamName,
-                isBookmaker ? null : row.AwayTeamId,
-                isBookmaker ? row.Team2 ?? string.Empty : row.AwayTeamName,
-                (isBookmaker ? row.LastSeenAt : row.CollectedAt) ?? row.FirstSeenAt))
-            .OrderBy(row => isBookmaker ? row.KickoffAt : row.MatchDate)
-            .ThenBy(row => row.MatchId)
-            .ToArray();
-        var pageSize = Math.Min(
-            Math.Clamp(GetInt(settings, "pageSize") ?? 100, 1, 1000),
-            (int)Math.Max(1, context.MaxRecords));
-        var offset = ParseOffset(context.Cursor, out _);
-        var snapshot = fixture.SnapshotId ?? 1;
-
-        var emitted = 0;
-        var page = 0;
-        foreach (var chunk in rows.Skip((int)Math.Min(offset, rows.Length))
-                     .Take((int)Math.Min(context.MaxRecords, int.MaxValue)).Chunk(pageSize))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var mapped = MapRows(chunk, dataset, snapshot);
-            emitted += chunk.Length;
-            page++;
-            yield return new SourceBatch(
-                mapped.Entities,
-                mapped.Events,
-                $"eva:{dataset}:{snapshot}:{snapshot}:{offset + emitted}",
-                page,
-                chunk.Length);
-        }
-
-        yield return SourceBatch.Empty($"eva:{dataset}:{snapshot}:{snapshot}:{offset + emitted}:complete");
     }
 
     private static async IAsyncEnumerable<SourceBatch> ReadGrpcAsync(
@@ -235,7 +157,7 @@ public sealed class EvaDataHubConnector : IConnector
             $"eva:{dataset}:{snapshotId ?? 0}:{datasetSnapshotId ?? 0}:{offset + rowsRead}:{(emittedAny ? "complete" : "empty")}");
     }
 
-    private static MappedRows MapRows(
+    internal static MappedRows MapRows(
         IReadOnlyList<EvaMatchRow> rows,
         string dataset,
         long snapshotId)
@@ -481,69 +403,7 @@ public sealed class EvaDataHubConnector : IConnector
             ? value.GetString()
             : null;
 
-    private static int? GetInt(JsonElement settings, string name) =>
-        settings.ValueKind == JsonValueKind.Object
-        && settings.TryGetProperty(name, out var value)
-        && value.TryGetInt32(out var number)
-            ? number
-            : null;
-
-    public sealed class EvaFixture
-    {
-        public long? SnapshotId { get; set; }
-
-        public List<EvaFixtureRow>? Rows { get; set; }
-    }
-
-    public sealed class EvaFixtureRow
-    {
-        [JsonPropertyName("match_id")]
-        public long? MatchId { get; set; }
-
-        [JsonPropertyName("event_id")]
-        public long? EventId { get; set; }
-
-        [JsonPropertyName("team1")]
-        public string? Team1 { get; set; }
-
-        [JsonPropertyName("team2")]
-        public string? Team2 { get; set; }
-
-        [JsonPropertyName("start_time")]
-        public DateTimeOffset? StartTime { get; set; }
-
-        [JsonPropertyName("last_seen_at")]
-        public DateTimeOffset? LastSeenAt { get; set; }
-
-        [JsonPropertyName("match_date")]
-        public DateOnly? MatchDate { get; set; }
-
-        [JsonPropertyName("kickoff_time")]
-        public DateTimeOffset? KickoffTime { get; set; }
-
-        [JsonPropertyName("league")]
-        public string? League { get; set; }
-
-        [JsonPropertyName("home_team_id")]
-        public long? HomeTeamId { get; set; }
-
-        [JsonPropertyName("home_team_name")]
-        public string HomeTeamName { get; set; } = string.Empty;
-
-        [JsonPropertyName("away_team_id")]
-        public long? AwayTeamId { get; set; }
-
-        [JsonPropertyName("away_team_name")]
-        public string AwayTeamName { get; set; } = string.Empty;
-
-        [JsonPropertyName("collected_at")]
-        public DateTimeOffset? CollectedAt { get; set; }
-
-        [JsonPropertyName("first_seen_at")]
-        public DateTimeOffset? FirstSeenAt { get; set; }
-    }
-
-    private sealed record EvaMatchRow(
+    internal sealed record EvaMatchRow(
         long? MatchId,
         DateTimeOffset? MatchDate,
         DateTimeOffset? KickoffAt,
@@ -554,7 +414,7 @@ public sealed class EvaDataHubConnector : IConnector
         string AwayTeamName,
         DateTimeOffset? ObservedAt);
 
-    private sealed record MappedRows(
+    internal sealed record MappedRows(
         IReadOnlyList<SourceEntityRecord> Entities,
         IReadOnlyList<SourceEventRecord> Events);
 }

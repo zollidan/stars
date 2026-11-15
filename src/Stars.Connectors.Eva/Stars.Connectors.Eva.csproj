@@ -24,4 +24,8 @@
     <ProjectReference Include="..\Stars.Connectors.Abstractions\Stars.Connectors.Abstractions.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Stars.Tests" />
+  </ItemGroup>
+
 </Project>

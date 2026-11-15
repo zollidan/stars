@@ -5,57 +5,41 @@ using Stars.Connectors.Abstractions;
 namespace Stars.Connectors.Rest;
 
 /// <summary>
-/// A small, honest second provider: JSON fixtures for local development and the same DTO
-/// shape over HTTP for a real REST API. It deliberately supports snapshot reads only;
-/// absence of ReadChanges is a normal connector state in STARS.
+/// Generic REST snapshot connector. It calls <c>GET {baseUrl}/snapshot</c> and maps the
+/// stable JSON DTO shape declared below. Snapshot-only support is deliberate: absence of
+/// a provider change feed is a normal connector state in STARS.
 /// </summary>
-public sealed class FixtureRestConnector : IConnector
+public sealed class RestSnapshotConnector : IConnector
 {
-    public const string ConnectorKey = "rest.fixture";
+    public const string ConnectorKey = "rest.snapshot";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public string Key => ConnectorKey;
 
     public ConnectorCapabilities Capabilities => ConnectorCapabilities.SnapshotOnly(
-        "Snapshot/fixture connector. Replays are idempotent because source keys are stable.");
+        "Bounded REST snapshot. Replays are idempotent because source keys are stable.");
 
     public async IAsyncEnumerable<SourceBatch> ReadSnapshotAsync(
         ConnectorContext context,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var settings = context.Settings;
-        var fixturePath = GetString(settings, "fixturePath");
         var pageSize = Math.Min(
             Math.Clamp(GetInt(settings, "pageSize") ?? 100, 1, 1000),
             (int)Math.Max(1, context.MaxRecords));
 
-        RestSnapshot snapshot;
-        if (!string.IsNullOrWhiteSpace(fixturePath))
+        if (context.HttpClient is null || string.IsNullOrWhiteSpace(context.BaseUrl))
         {
-            var path = Path.IsPathRooted(fixturePath)
-                ? fixturePath
-                : Path.Combine(AppContext.BaseDirectory, fixturePath);
-            if (!File.Exists(path))
-            {
-                path = Path.Combine(Directory.GetCurrentDirectory(), fixturePath);
-            }
-
-            await using var stream = File.OpenRead(path);
-            snapshot = await JsonSerializer.DeserializeAsync<RestSnapshot>(stream, JsonOptions, cancellationToken)
-                ?? throw new InvalidOperationException($"REST fixture '{path}' is empty.");
+            throw new InvalidOperationException(
+                "REST connector requires a baseUrl and an HTTP client.");
         }
-        else
-        {
-            if (context.HttpClient is null || string.IsNullOrWhiteSpace(context.BaseUrl))
-            {
-                throw new InvalidOperationException(
-                    "REST connector needs either settings.fixturePath or baseUrl + an HTTP client.");
-            }
 
-            var url = context.BaseUrl.TrimEnd('/') + "/snapshot";
-            using var response = await context.HttpClient.GetAsync(url, cancellationToken);
-            response.EnsureSuccessStatusCode();
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        var url = context.BaseUrl.TrimEnd('/') + "/snapshot";
+        using var response = await context.HttpClient.GetAsync(url, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        RestSnapshot snapshot;
+        await using (var stream = await response.Content.ReadAsStreamAsync(cancellationToken))
+        {
             snapshot = await JsonSerializer.DeserializeAsync<RestSnapshot>(stream, JsonOptions, cancellationToken)
                 ?? throw new InvalidOperationException($"REST provider '{url}' returned an empty snapshot.");
         }
@@ -135,13 +119,6 @@ public sealed class FixtureRestConnector : IConnector
                 .ToArray(),
             sourceEvent.Attributes,
             sourceEvent.ObservedAt);
-
-    private static string? GetString(JsonElement settings, string name) =>
-        settings.ValueKind == JsonValueKind.Object
-        && settings.TryGetProperty(name, out var value)
-        && value.ValueKind == JsonValueKind.String
-            ? value.GetString()
-            : null;
 
     private static int? GetInt(JsonElement settings, string name) =>
         settings.ValueKind == JsonValueKind.Object

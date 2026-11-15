@@ -2,7 +2,7 @@
 
 - Status: accepted
 - Date: 2026-11-15
-- Context: prototype v0.1
+- Context: product v1
 
 ## Decision
 
@@ -18,7 +18,7 @@ new data is visible and replay remains idempotent.
 
 - The connector does not pretend a change feed exists.
 - Freshness for EVA is explicit and observable in `sync_runs`.
-- The fixture/REST provider is used to demonstrate incremental context changes until
-  DataHub exposes a safe change contract.
+- Other providers may supply incremental context through their own contracts; STARS does
+  not simulate a change feed by reading a local file.
 - Any future polling must be justified by a bounded, server-supported change API, not by
   walking storage.

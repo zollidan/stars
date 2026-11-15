@@ -22,10 +22,10 @@ services:
         condition: service_healthy
     environment:
       ConnectionStrings__Stars: Host=db;Port=5432;Database=stars;Username=stars;Password=stars
-      Stars__Demo__FixtureRoot: fixtures
-      # Point this at a real EVA DataHub to use the gRPC connector instead of the
-      # local Arrow-shaped fixture. Keep the token in an environment variable.
-      Stars__Demo__EvaAddress: ${STARS_EVA_ADDRESS:-}
+      # Point this at a reachable EVA DataHub. The feed is created from this
+      # configuration on startup; imports stay manual unless an operator triggers them.
+      Stars__Providers__eva__BaseUrl: ${STARS_EVA_ADDRESS:-http://datahub:50051}
+      # Keep the token in an environment variable; only its name is stored in PostgreSQL.
       DATAHUB_SERVICE_TOKEN: ${DATAHUB_SERVICE_TOKEN:-}
     ports:
       - "5080:5080" # HTTP API + admin UI

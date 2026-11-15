@@ -601,6 +601,10 @@ namespace Stars.Infrastructure.Persistence.Migrations
                     b.HasIndex("ConnectorKey")
                         .HasDatabaseName("ix_providers_connector");
 
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasDatabaseName("ux_provider_connections_name");
+
                     b.ToTable("provider_connections", null, t =>
                         {
                             t.HasComment("Provider configuration. Store only a secret reference, never API keys in plaintext.");

@@ -29,7 +29,6 @@ RUN dotnet publish src/Stars.Api/Stars.Api.csproj -c Release -o /app/publish --n
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 COPY --from=publish /app/publish ./
-COPY fixtures ./fixtures
 ENV ASPNETCORE_ENVIRONMENT=Production
 EXPOSE 5080 5081
 ENTRYPOINT ["dotnet", "Stars.Api.dll"]

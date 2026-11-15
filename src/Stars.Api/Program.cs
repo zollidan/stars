@@ -16,13 +16,16 @@ builder.Services.AddGrpc();
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();
-builder.Services.AddCors(options =>
+if (builder.Environment.IsDevelopment())
 {
-    options.AddPolicy("admin", policy => policy
-        .WithOrigins("http://localhost:5173", "http://127.0.0.1:5173")
-        .AllowAnyHeader()
-        .AllowAnyMethod());
-});
+    builder.Services.AddCors(options =>
+    {
+        options.AddPolicy("admin", policy => policy
+            .WithOrigins("http://localhost:5173", "http://127.0.0.1:5173")
+            .AllowAnyHeader()
+            .AllowAnyMethod());
+    });
+}
 
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddHealthChecks()
@@ -42,7 +45,7 @@ builder.Services.AddOpenTelemetry()
 
 // Connector composition lives in the host: Core and Infrastructure never reference a
 // concrete provider. Adding a connector means registering one IConnector implementation.
-builder.Services.AddSingleton<IConnector, FixtureRestConnector>();
+builder.Services.AddSingleton<IConnector, RestSnapshotConnector>();
 builder.Services.AddSingleton<IConnector, EvaDataHubConnector>();
 builder.Services.AddSingleton<IConnectorRegistry, ConnectorRegistry>();
 
@@ -53,7 +56,10 @@ await app.Services.InitializeDatabaseAsync();
 app.UseExceptionHandler();
 app.UseDefaultFiles();
 app.UseStaticFiles();
-app.UseCors("admin");
+if (app.Environment.IsDevelopment())
+{
+    app.UseCors("admin");
+}
 
 app.MapStarsEndpoints();
 app.MapGrpcService<RegistryGrpcService>();
