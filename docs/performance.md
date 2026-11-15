@@ -297,7 +297,61 @@ python3 scripts/perf/generate-fixtures.py --mode auto --teams 500 --out /tmp/per
 # запустить API с -v /tmp/perf-auto:/fixtures:Z и Stars__Demo__FixtureRoot=/fixtures
 ```
 
-## 11. Ограничения
+## 11. Как измерить CPU именно matching
+
+Важно разделять три фазы:
+
+1. **startup / migration**;
+2. **sync + ingestion** (`SourceSyncService`);
+3. **matching worker** (`ProcessingJobWorker` + `MatchingProcessor`).
+
+`podman stats --no-stream` показывает накопительный `cpu_time`, а не мгновенный CPU.
+Поэтому корректно считать дельту:
+
+```text
+cores = (cpu_time_after - cpu_time_before) / wall_seconds
+```
+
+Готовый скрипт:
+
+```bash
+STARS_API_URL=http://127.0.0.1:5080 \
+API_CONTAINER=stars-api PG_CONTAINER=stars-postgres \
+./scripts/perf/measure-matching.sh
+```
+
+Он ждёт, пока `/api/metrics` покажет `pendingJobs + processingJobs > 0`, сэмплирует
+`cpu_time` контейнеров API и PostgreSQL, ждёт опустошения очереди и печатает средний CPU
+в ядрах и память.
+
+Замеры на текущем HEAD, только фаза matching, без read-нагрузки:
+
+| Датасет | Длительность | API avg / max | PostgreSQL avg / max | Jobs/s |
+| --- | ---: | ---: | ---: | ---: |
+| Auto 500 (1 522 jobs) | 39.7 s | **0.28 / 0.63 cores** | **0.49 / 0.59 cores** | ~38 |
+| Review 1000 (3 041 job) | 121.5 s | **0.21 / 0.51 cores** | **0.59 / 0.73 cores** | ~25 |
+
+То есть matching сейчас занимает примерно **0.7–0.8 ядра суммарно** на 20-ядерном
+хосте, или порядка **3–4% CPU хоста**. Это не 100% CPU. Startup/ingestion заметно
+дороже: API до ~1.35–1.38 cores, PostgreSQL до ~0.68 cores, но это миграции, sync и
+первичная запись, а не пересчёт всей справочной базы.
+
+Для проверки, что поиск не превратился в полный скан, полезно посмотреть план
+кандидатного запроса:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id FROM source_entities
+WHERE entity_kind = 'team'
+  AND normalized_name % 'spartak moskva'
+ORDER BY similarity(normalized_name, 'spartak moskva') DESC
+LIMIT 24;
+```
+
+Ожидаемый план — Bitmap/Index Scan по `ix_source_entities_name_trgm`, а не Seq Scan.
+Если там появляется Seq Scan, нужно проверить `pg_trgm`, GIN-индекс и статистику.
+
+## 12. Ограничения
 
 - Один хост, loopback, без TLS/прокси/аутентификации и rate limiting.
 - PostgreSQL с дефолтными настройками, без тюнинга `shared_buffers`, `work_mem`,
