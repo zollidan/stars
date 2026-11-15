@@ -195,7 +195,9 @@ returns **409 Conflict** and does not rewrite history. Unlinking closes the link
 ## 9. Observability
 
 - `/health/live` — process liveness.
-- `/health/ready` — PostgreSQL reachability.
+- `/health/ready` and `/health/db` — PostgreSQL reachability.
+- Health endpoints use ASP.NET Core Health Checks: plain-text `Healthy` (200) or
+  `Unhealthy` (503); liveness does not query PostgreSQL.
 - `/api/metrics` — source entities/events, providers, masters, active links, pending
   reviews, job states, failed runs, records read, average sync duration.
 - OTLP metrics (ASP.NET Core + HTTP client) when `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
