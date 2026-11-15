@@ -194,6 +194,10 @@ returns **409 Conflict** and does not rewrite history. Unlinking closes the link
 
 ## 9. Observability
 
+HTTP API exceptions use Problem Details: missing resources return 404, conflicting
+links return 409, and invalid review transitions return 400. Unexpected failures return
+500 without exposing internal exception messages in production.
+
 - `/health/live` — process liveness.
 - `/health/ready` and `/health/db` — PostgreSQL reachability.
 - Health endpoints use ASP.NET Core Health Checks: plain-text `Healthy` (200) or

@@ -1,10 +1,11 @@
-using System.Text.Json;
 using Npgsql;
-using NpgsqlTypes;
 using Stars.Application.Matching;
 using Stars.Application.Normalization;
+using static Stars.Infrastructure.Registry.RegistryWrites;
 
 namespace Stars.Infrastructure.Registry;
+
+public sealed class ReviewValidationException(string message) : Exception(message);
 
 public sealed class LinkConflictException(string message) : Exception(message);
 
@@ -25,17 +26,17 @@ public sealed class ReviewService(NpgsqlDataSource dataSource)
 
             if (candidate.Status == "accepted")
             {
-                return await FindActiveMasterAsync(connection, transaction, candidate.SourceEntityId, cancellationToken)
-                    ?? throw new InvalidOperationException("Candidate is accepted but no active link exists.");
+                return await FindActiveMasterAsync(connection, candidate.SourceEntityId, cancellationToken, transaction)
+                    ?? throw new ReviewValidationException("Candidate is accepted but no active link exists.");
             }
 
             if (candidate.Status != "pending")
             {
-                throw new InvalidOperationException($"Candidate is '{candidate.Status}' and cannot be confirmed.");
+                throw new ReviewValidationException($"Candidate is '{candidate.Status}' and cannot be confirmed.");
             }
 
             var existingMaster = await FindActiveMasterAsync(
-                connection, transaction, candidate.SourceEntityId, cancellationToken);
+                connection, candidate.SourceEntityId, cancellationToken, transaction);
 
             var masterId = candidate.CandidateMasterEntityId
                 ?? await ResolveOrCreateMasterAsync(connection, transaction, candidate, reviewer, cancellationToken);
@@ -62,12 +63,12 @@ public sealed class ReviewService(NpgsqlDataSource dataSource)
 
                 await InsertLinkAsync(
                     connection, transaction, candidate.SourceEntityId, masterId, decisionId,
-                    candidate.Score is null ? null : Math.Round(candidate.Score.Value, 3), cancellationToken);
+                    candidate.Score is null ? null : Math.Round((decimal)candidate.Score.Value, 3), cancellationToken);
             }
 
             if (candidate.CandidateSourceEntityId is { } targetSourceId)
             {
-                var targetMaster = await FindActiveMasterAsync(connection, transaction, targetSourceId, cancellationToken);
+                var targetMaster = await FindActiveMasterAsync(connection, targetSourceId, cancellationToken, transaction);
                 if (targetMaster is null)
                 {
                     var targetDecision = await InsertDecisionAsync(
@@ -83,7 +84,7 @@ public sealed class ReviewService(NpgsqlDataSource dataSource)
                         cancellationToken);
                     await InsertLinkAsync(
                         connection, transaction, targetSourceId, masterId, targetDecision,
-                        candidate.Score is null ? null : Math.Round(candidate.Score.Value, 3), cancellationToken);
+                        candidate.Score is null ? null : Math.Round((decimal)candidate.Score.Value, 3), cancellationToken);
                 }
                 else if (targetMaster != masterId)
                 {
@@ -92,10 +93,12 @@ public sealed class ReviewService(NpgsqlDataSource dataSource)
                 }
             }
 
-            await AddMasterNameAsync(connection, transaction, masterId, candidate.SourceName, cancellationToken);
+            await AddMasterNameAsync(connection, transaction, masterId, candidate.SourceName,
+                NameNormalizer.Normalize(candidate.SourceName), "alias", cancellationToken);
             if (candidate.CandidateSourceName is not null)
             {
-                await AddMasterNameAsync(connection, transaction, masterId, candidate.CandidateSourceName, cancellationToken);
+                await AddMasterNameAsync(connection, transaction, masterId, candidate.CandidateSourceName,
+                    NameNormalizer.Normalize(candidate.CandidateSourceName), "alias", cancellationToken);
             }
 
             await using (var accept = new NpgsqlCommand(
@@ -139,7 +142,7 @@ public sealed class ReviewService(NpgsqlDataSource dataSource)
 
             if (candidate.Status != "pending")
             {
-                throw new InvalidOperationException($"Candidate is '{candidate.Status}' and cannot be rejected.");
+                throw new ReviewValidationException($"Candidate is '{candidate.Status}' and cannot be rejected.");
             }
 
             await InsertDecisionAsync(
@@ -194,7 +197,7 @@ public sealed class ReviewService(NpgsqlDataSource dataSource)
                 throw new KeyNotFoundException("Active link was not found.");
             }
 
-            var decisionId = await InsertDecisionAsync(
+            await InsertDecisionAsync(
                 connection,
                 transaction,
                 sourceEntityId,
@@ -215,17 +218,6 @@ public sealed class ReviewService(NpgsqlDataSource dataSource)
             close.Parameters.AddWithValue("id", id);
             await close.ExecuteNonQueryAsync(cancellationToken);
 
-            // Keep the decision id in the audit trail even though the link is closed.
-            await using var annotate = new NpgsqlCommand(
-                "UPDATE match_decisions SET decision_details = decision_details || @details::jsonb WHERE id = @id",
-                connection, transaction);
-            annotate.Parameters.AddWithValue("id", decisionId);
-            annotate.Parameters.Add(new NpgsqlParameter("details", NpgsqlDbType.Jsonb)
-            {
-                Value = JsonSerializer.Serialize(new { link_id = id }),
-            });
-            await annotate.ExecuteNonQueryAsync(cancellationToken);
-
             await transaction.CommitAsync(cancellationToken);
         }
         catch
@@ -244,50 +236,29 @@ public sealed class ReviewService(NpgsqlDataSource dataSource)
     {
         if (candidate.CandidateSourceEntityId is not { } targetSourceId)
         {
-            throw new InvalidOperationException("Candidate has no target.");
+            throw new ReviewValidationException("Candidate has no target.");
         }
 
-        var existing = await FindActiveMasterAsync(connection, transaction, targetSourceId, cancellationToken);
+        var existing = await FindActiveMasterAsync(connection, targetSourceId, cancellationToken, transaction);
         if (existing is not null)
         {
             return existing.Value;
         }
 
         var target = await LoadSourceEntityAsync(connection, transaction, targetSourceId, cancellationToken)
-            ?? throw new InvalidOperationException("Candidate target source entity was not found.");
+            ?? throw new ReviewValidationException("Candidate target source entity was not found.");
 
-        await using var insert = new NpgsqlCommand(
-            """
-            INSERT INTO master_entities
-                (entity_kind, preferred_name, normalized_name, sport_code, country_code,
-                 attributes, status, created_at, updated_at)
-            VALUES
-                (@kind, @name, @normalized, @sport, @country, @attributes, 'active', now(), now())
-            RETURNING id
-            """, connection, transaction);
-        insert.Parameters.AddWithValue("kind", target.EntityKind);
-        insert.Parameters.AddWithValue("name", target.DisplayName.Trim());
-        insert.Parameters.AddWithValue("normalized", target.NormalizedName);
-        insert.Parameters.Add(new NpgsqlParameter("sport", NpgsqlDbType.Text)
-        {
-            Value = (object?)target.SportCode ?? DBNull.Value,
-        });
-        insert.Parameters.Add(new NpgsqlParameter("country", NpgsqlDbType.Text)
-        {
-            Value = (object?)target.CountryCode ?? DBNull.Value,
-        });
-        insert.Parameters.Add(new NpgsqlParameter("attributes", NpgsqlDbType.Jsonb)
-        {
-            Value = JsonSerializer.Serialize(new
+        var masterId = await InsertMasterAsync(connection, transaction, target.EntityKind,
+            target.DisplayName, target.NormalizedName, target.SportCode, target.CountryCode,
+            new
             {
                 created_by = reviewer,
                 ruleset = MatchEngine.Version,
                 first_source_entity_id = targetSourceId,
-            }),
-        });
-        var masterId = (Guid)(await insert.ExecuteScalarAsync(cancellationToken))!;
+            }, cancellationToken);
 
-        await AddMasterNameAsync(connection, transaction, masterId, target.DisplayName, cancellationToken);
+        await AddMasterNameAsync(connection, transaction, masterId, target.DisplayName,
+            NameNormalizer.Normalize(target.DisplayName), "alias", cancellationToken);
 
         var decisionId = await InsertDecisionAsync(
             connection,
@@ -364,111 +335,6 @@ public sealed class ReviewService(NpgsqlDataSource dataSource)
             reader.GetString(2),
             reader.IsDBNull(3) ? null : reader.GetString(3),
             reader.IsDBNull(4) ? null : reader.GetString(4));
-    }
-
-    private static async Task<Guid?> FindActiveMasterAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        Guid sourceEntityId,
-        CancellationToken cancellationToken)
-    {
-        await using var command = new NpgsqlCommand(
-            """
-            SELECT master_entity_id FROM entity_links
-            WHERE source_entity_id = @source AND valid_to IS NULL
-            LIMIT 1
-            """, connection, transaction);
-        command.Parameters.AddWithValue("source", sourceEntityId);
-        var value = await command.ExecuteScalarAsync(cancellationToken);
-        return value is Guid id ? id : null;
-    }
-
-    private static async Task<Guid> InsertDecisionAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        Guid sourceEntityId,
-        Guid? candidateId,
-        Guid? masterEntityId,
-        string decisionType,
-        string decidedBy,
-        string reason,
-        object details,
-        CancellationToken cancellationToken)
-    {
-        await using var command = new NpgsqlCommand(
-            """
-            INSERT INTO match_decisions
-                (source_entity_id, match_candidate_id, master_entity_id, decision_type,
-                 decided_by, ruleset_version, reason, decision_details, decided_at)
-            VALUES
-                (@source, @candidate, @master, @type, @by, @version, @reason, @details, now())
-            RETURNING id
-            """, connection, transaction);
-        command.Parameters.AddWithValue("source", sourceEntityId);
-        command.Parameters.Add(new NpgsqlParameter("candidate", NpgsqlDbType.Uuid)
-        {
-            Value = (object?)candidateId ?? DBNull.Value,
-        });
-        command.Parameters.Add(new NpgsqlParameter("master", NpgsqlDbType.Uuid)
-        {
-            Value = (object?)masterEntityId ?? DBNull.Value,
-        });
-        command.Parameters.AddWithValue("type", decisionType);
-        command.Parameters.AddWithValue("by", decidedBy);
-        command.Parameters.AddWithValue("version", MatchEngine.Version);
-        command.Parameters.AddWithValue("reason", reason);
-        command.Parameters.Add(new NpgsqlParameter("details", NpgsqlDbType.Jsonb)
-        {
-            Value = JsonSerializer.Serialize(details),
-        });
-        return (Guid)(await command.ExecuteScalarAsync(cancellationToken))!;
-    }
-
-    private static async Task InsertLinkAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        Guid sourceEntityId,
-        Guid masterEntityId,
-        Guid decisionId,
-        double? confidence,
-        CancellationToken cancellationToken)
-    {
-        await using var command = new NpgsqlCommand(
-            """
-            INSERT INTO entity_links
-                (source_entity_id, master_entity_id, decision_id, confidence, valid_from)
-            VALUES (@source, @master, @decision, @confidence, now())
-            """, connection, transaction);
-        command.Parameters.AddWithValue("source", sourceEntityId);
-        command.Parameters.AddWithValue("master", masterEntityId);
-        command.Parameters.AddWithValue("decision", decisionId);
-        command.Parameters.Add(new NpgsqlParameter("confidence", NpgsqlDbType.Numeric)
-        {
-            Value = confidence is null ? DBNull.Value : Math.Round((decimal)confidence.Value, 3),
-        });
-        await command.ExecuteNonQueryAsync(cancellationToken);
-    }
-
-    private static async Task AddMasterNameAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        Guid masterId,
-        string name,
-        CancellationToken cancellationToken)
-    {
-        await using var command = new NpgsqlCommand(
-            """
-            INSERT INTO master_names
-                (master_entity_id, name, normalized_name, name_kind, recorded_at)
-            SELECT @master, @name, @normalized, 'alias', now()
-            WHERE NOT EXISTS (
-                SELECT 1 FROM master_names
-                WHERE master_entity_id = @master AND name = @name)
-            """, connection, transaction);
-        command.Parameters.AddWithValue("master", masterId);
-        command.Parameters.AddWithValue("name", name.Trim());
-        command.Parameters.AddWithValue("normalized", NameNormalizer.Normalize(name));
-        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private sealed record CandidateRow(

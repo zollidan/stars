@@ -61,11 +61,11 @@ export default function App() {
     }
   }, [load])
 
-  async function run(key: string, action: () => Promise<unknown>) {
+  async function run(key: string, action?: () => Promise<unknown>) {
     setBusy(key)
     setError(null)
     try {
-      await action()
+      await action?.()
       await load()
     } catch (reason) {
       setError(String(reason))
@@ -77,14 +77,14 @@ export default function App() {
   async function sync(feed: SourceFeed) {
     await run(`sync:${feed.sourceFeedId}`, async () => {
       await api.syncFeed(feed.sourceFeedId)
-      await waitForWorker(load)
+      await waitForWorker()
     })
   }
 
   async function syncAll() {
     await run('sync-all', async () => {
       await api.syncAll()
-      await waitForWorker(load)
+      await waitForWorker()
     })
   }
 
@@ -111,7 +111,7 @@ export default function App() {
           </p>
         </div>
         <div className="actions">
-          <button className="ghost" onClick={() => run('refresh', load)} disabled={busy !== null}>
+          <button className="ghost" onClick={() => run('refresh')} disabled={busy !== null}>
             Refresh
           </button>
           <button className="primary" onClick={syncAll} disabled={busy !== null}>

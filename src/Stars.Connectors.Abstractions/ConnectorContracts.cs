@@ -60,9 +60,11 @@ public sealed record SourceBatch(
     IReadOnlyList<SourceEntityRecord> Entities,
     IReadOnlyList<SourceEventRecord> Events,
     string? Checkpoint,
-    long Sequence = 0)
+    long Sequence = 0,
+    int? InputRecordCount = null)
 {
-    public int RecordCount => Entities.Count + Events.Count;
+    // One provider row may produce several entities and an event (for example EVA).
+    public int RecordCount => InputRecordCount ?? Entities.Count + Events.Count;
 
     public static SourceBatch Empty(string? checkpoint = null) =>
         new([], [], checkpoint);

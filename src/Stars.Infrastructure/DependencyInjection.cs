@@ -37,7 +37,10 @@ public static class DependencyInjection
                 npgsql.EnableRetryOnFailure(maxRetryCount: 5, maxRetryDelay: TimeSpan.FromSeconds(10), errorCodesToAdd: null);
             }));
 
-        services.Configure<StarsOptions>(configuration.GetSection(StarsOptions.SectionName));
+        services.AddOptions<StarsOptions>()
+            .Bind(configuration.GetSection(StarsOptions.SectionName))
+            .Validate(options => options.MaxRecordsPerSnapshot > 0, "MaxRecordsPerSnapshot must be positive.")
+            .ValidateOnStart();
         services.AddSingleton<ISecretResolver, EnvironmentSecretResolver>();
         services.AddHttpClient("connectors", client => client.Timeout = TimeSpan.FromSeconds(45));
 

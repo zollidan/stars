@@ -19,19 +19,10 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
 {
     public PostgreSqlContainer? Container { get; private set; }
 
-    public string? SkipReason { get; private set; }
-
     public async Task InitializeAsync()
     {
-        try
-        {
-            Container = new PostgreSqlBuilder("postgres:18-alpine").Build();
-            await Container.StartAsync();
-        }
-        catch (Exception exception)
-        {
-            SkipReason = exception.Message;
-        }
+        Container = new PostgreSqlBuilder("postgres:18-alpine").Build();
+        await Container.StartAsync();
     }
 
     public async Task DisposeAsync()
@@ -46,7 +37,7 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
     {
         if (Container is null)
         {
-            throw new InvalidOperationException(SkipReason ?? "PostgreSQL container is unavailable.");
+            throw new InvalidOperationException("PostgreSQL container is unavailable.");
         }
 
         var database = $"stars_test_{Guid.NewGuid():N}";
@@ -70,7 +61,7 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
 public sealed class PostgresCollection : ICollectionFixture<PostgresContainerFixture>;
 
 [Collection("postgres")]
-public class StarsEndToEndTests(PostgresContainerFixture fixture)
+public partial class StarsEndToEndTests(PostgresContainerFixture fixture)
 {
     private static string FixtureRoot =>
         Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../fixtures"));
@@ -78,11 +69,6 @@ public class StarsEndToEndTests(PostgresContainerFixture fixture)
     [Fact]
     public async Task Demo_scenario_links_spartak_and_reviews_dynamo()
     {
-        if (fixture.SkipReason is not null)
-        {
-            return;
-        }
-
         var connectionString = await fixture.CreateDatabaseAsync();
         await using var factory = CreateFactory(connectionString);
         var client = factory.CreateClient();
@@ -123,11 +109,6 @@ public class StarsEndToEndTests(PostgresContainerFixture fixture)
     [Fact]
     public async Task Repeated_snapshots_do_not_duplicate_records_or_links()
     {
-        if (fixture.SkipReason is not null)
-        {
-            return;
-        }
-
         var connectionString = await fixture.CreateDatabaseAsync();
         await using var factory = CreateFactory(connectionString);
         var client = factory.CreateClient();
@@ -152,11 +133,6 @@ public class StarsEndToEndTests(PostgresContainerFixture fixture)
     [Fact]
     public async Task Confirming_ambiguous_review_creates_one_canonical_team()
     {
-        if (fixture.SkipReason is not null)
-        {
-            return;
-        }
-
         var connectionString = await fixture.CreateDatabaseAsync();
         await using var factory = CreateFactory(connectionString);
         var client = factory.CreateClient();
@@ -173,6 +149,13 @@ public class StarsEndToEndTests(PostgresContainerFixture fixture)
         response.EnsureSuccessStatusCode();
         using var confirmed = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var masterId = confirmed.RootElement.GetProperty("masterEntityId").GetString();
+
+        using var repeated = await client.PostAsJsonAsync(
+            $"/api/review/{candidate.GetProperty("candidateId").GetString()}/confirm",
+            new { reviewer = "test" });
+        repeated.EnsureSuccessStatusCode();
+        using var repeatedResult = JsonDocument.Parse(await repeated.Content.ReadAsStringAsync());
+        Assert.Equal(masterId, repeatedResult.RootElement.GetProperty("masterEntityId").GetString());
 
         using var directory = JsonDocument.Parse(await client.GetStringAsync("/api/directory"));
         var master = directory.RootElement.EnumerateArray()
@@ -191,11 +174,6 @@ public class StarsEndToEndTests(PostgresContainerFixture fixture)
     [Fact]
     public async Task Grpc_read_api_resolves_source_and_returns_master()
     {
-        if (fixture.SkipReason is not null)
-        {
-            return;
-        }
-
         var connectionString = await fixture.CreateDatabaseAsync();
         await using var factory = CreateFactory(connectionString);
         var client = factory.CreateClient();
@@ -231,11 +209,6 @@ public class StarsEndToEndTests(PostgresContainerFixture fixture)
     [Fact]
     public async Task Delayed_observation_does_not_overwrite_newer_name()
     {
-        if (fixture.SkipReason is not null)
-        {
-            return;
-        }
-
         var connectionString = await fixture.CreateDatabaseAsync();
         var options = new DbContextOptionsBuilder<StarsDbContext>()
             .UseNpgsql(connectionString)
@@ -269,8 +242,7 @@ public class StarsEndToEndTests(PostgresContainerFixture fixture)
         await using var dataSource = new NpgsqlDataSourceBuilder(connectionString).Build();
         var store = new SourceIngestionStore(dataSource, NullLogger<SourceIngestionStore>.Instance);
         var descriptor = new FeedDescriptor(
-            feed.Id, provider.Id, feed.FeedKey, feed.EntityKind, null, "snapshot",
-            JsonSerializer.SerializeToElement(new { }));
+            feed.Id, feed.FeedKey);
 
         var newer = new SourceEntityRecord(
             "team", "team:1", "1", "New Name", "football", "RU",

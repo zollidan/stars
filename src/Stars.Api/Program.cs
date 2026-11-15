@@ -13,6 +13,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddGrpc();
 builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("admin", policy => policy
@@ -47,6 +48,7 @@ var app = builder.Build();
 
 await app.Services.InitializeDatabaseAsync();
 
+app.UseExceptionHandler();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseCors("admin");

@@ -112,14 +112,10 @@ public sealed class EvaDataHubConnector : IConnector
 
         var emitted = 0;
         var page = 0;
-        foreach (var chunk in rows.Skip((int)Math.Min(offset, rows.Length)).Chunk(pageSize))
+        foreach (var chunk in rows.Skip((int)Math.Min(offset, rows.Length))
+                     .Take((int)Math.Min(context.MaxRecords, int.MaxValue)).Chunk(pageSize))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (emitted >= context.MaxRecords)
-            {
-                break;
-            }
-
             var mapped = MapRows(chunk, dataset, snapshot);
             emitted += chunk.Length;
             page++;
@@ -127,7 +123,8 @@ public sealed class EvaDataHubConnector : IConnector
                 mapped.Entities,
                 mapped.Events,
                 $"eva:{dataset}:{snapshot}:{snapshot}:{offset + emitted}",
-                page);
+                page,
+                chunk.Length);
         }
 
         yield return SourceBatch.Empty($"eva:{dataset}:{snapshot}:{snapshot}:{offset + emitted}:complete");
@@ -142,7 +139,6 @@ public sealed class EvaDataHubConnector : IConnector
             ?? context.BaseUrl
             ?? throw new InvalidOperationException("EVA connector requires settings.address or baseUrl.");
         var dataset = GetString(settings, "dataset") ?? "api_sport_matches_v1";
-        var pageSize = Math.Clamp(GetInt(settings, "pageSize") ?? 1000, 1, 5000);
         var offset = ParseOffset(context.Cursor, out var pinnedSnapshot);
         var remaining = Math.Max(1, context.MaxRecords);
         var limit = (int)Math.Min(Math.Min(remaining, 100_000), int.MaxValue);
@@ -195,21 +191,28 @@ public sealed class EvaDataHubConnector : IConnector
                 continue;
             }
 
-            var rows = ParseArrow(message.ArrowIpc.Memory);
-            if (rows.Count == 0)
+            var rows = ParseArrow(message.ArrowIpc.Memory)
+                .Take((int)Math.Min(limit - rowsRead, int.MaxValue)).ToArray();
+            if (rows.Length == 0)
             {
                 continue;
             }
 
             var mapped = MapRows(rows, dataset, message.SnapshotId);
-            rowsRead += rows.Count;
+            rowsRead += rows.Length;
             emittedAny = true;
             sequence++;
             yield return new SourceBatch(
                 mapped.Entities,
                 mapped.Events,
                 $"eva:{dataset}:{snapshotId}:{datasetSnapshotId}:{offset + rowsRead}",
-                sequence);
+                sequence,
+                rows.Length);
+
+            if (rowsRead >= limit)
+            {
+                break;
+            }
         }
 
         yield return SourceBatch.Empty(

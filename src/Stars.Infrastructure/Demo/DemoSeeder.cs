@@ -75,7 +75,6 @@ public sealed class DemoSeeder(
             {
                 fixturePath = restPath,
                 pageSize = 100,
-                snapshotVersion = "2026-11-14",
             }),
             IsEnabled = true,
             CreatedAt = now,

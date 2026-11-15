@@ -63,24 +63,9 @@ public static class StarsEndpoints
             ReviewService reviews,
             CancellationToken cancellationToken) =>
         {
-            try
-            {
-                var reviewer = string.IsNullOrWhiteSpace(request?.Reviewer) ? "operator" : request.Reviewer;
-                var masterId = await reviews.ConfirmAsync(candidateId, reviewer, cancellationToken);
-                return Results.Ok(new { masterEntityId = masterId, status = "linked" });
-            }
-            catch (KeyNotFoundException exception)
-            {
-                return Results.NotFound(new { error = exception.Message });
-            }
-            catch (LinkConflictException exception)
-            {
-                return Results.Conflict(new { error = exception.Message });
-            }
-            catch (InvalidOperationException exception)
-            {
-                return Results.BadRequest(new { error = exception.Message });
-            }
+            var reviewer = string.IsNullOrWhiteSpace(request?.Reviewer) ? "operator" : request.Reviewer;
+            var masterId = await reviews.ConfirmAsync(candidateId, reviewer, cancellationToken);
+            return Results.Ok(new { masterEntityId = masterId, status = "linked" });
         });
 
         api.MapPost("/review/{candidateId:guid}/reject", async (
@@ -89,20 +74,9 @@ public static class StarsEndpoints
             ReviewService reviews,
             CancellationToken cancellationToken) =>
         {
-            try
-            {
-                var reviewer = string.IsNullOrWhiteSpace(request?.Reviewer) ? "operator" : request.Reviewer;
-                await reviews.RejectAsync(candidateId, reviewer, request?.Reason, cancellationToken);
-                return Results.Ok(new { candidateId, status = "rejected" });
-            }
-            catch (KeyNotFoundException exception)
-            {
-                return Results.NotFound(new { error = exception.Message });
-            }
-            catch (InvalidOperationException exception)
-            {
-                return Results.BadRequest(new { error = exception.Message });
-            }
+            var reviewer = string.IsNullOrWhiteSpace(request?.Reviewer) ? "operator" : request.Reviewer;
+            await reviews.RejectAsync(candidateId, reviewer, request?.Reason, cancellationToken);
+            return Results.Ok(new { candidateId, status = "rejected" });
         });
 
         api.MapPost("/masters/{masterId:guid}/unlink/{sourceEntityId:guid}", async (
@@ -112,16 +86,9 @@ public static class StarsEndpoints
             ReviewService reviews,
             CancellationToken cancellationToken) =>
         {
-            try
-            {
-                var reviewer = string.IsNullOrWhiteSpace(request?.Reviewer) ? "operator" : request.Reviewer;
-                await reviews.UnlinkAsync(masterId, sourceEntityId, reviewer, request?.Reason, cancellationToken);
-                return Results.Ok(new { masterEntityId = masterId, sourceEntityId, status = "unlinked" });
-            }
-            catch (KeyNotFoundException exception)
-            {
-                return Results.NotFound(new { error = exception.Message });
-            }
+            var reviewer = string.IsNullOrWhiteSpace(request?.Reviewer) ? "operator" : request.Reviewer;
+            await reviews.UnlinkAsync(masterId, sourceEntityId, reviewer, request?.Reason, cancellationToken);
+            return Results.Ok(new { masterEntityId = masterId, sourceEntityId, status = "unlinked" });
         });
 
         api.MapGet("/resolve", async (

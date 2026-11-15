@@ -12,12 +12,7 @@ namespace Stars.Infrastructure.Ingestion;
 
 public sealed record FeedDescriptor(
     Guid SourceFeedId,
-    Guid ProviderConnectionId,
-    string FeedKey,
-    string EntityKind,
-    string? DatasetRef,
-    string SyncMode,
-    JsonElement FeedConfig);
+    string FeedKey);
 
 public sealed record BatchIngestionResult(
     int EntitiesNew,
@@ -427,14 +422,15 @@ public sealed class SourceIngestionStore(
         else
         {
             await using var touch = new NpgsqlCommand(
-                "UPDATE source_events SET last_seen_at = now() WHERE id = @id",
+                "UPDATE source_events SET last_seen_at = GREATEST(last_seen_at, @observed) WHERE id = @id",
                 connection, transaction);
             touch.Parameters.AddWithValue("id", id);
+            touch.Parameters.AddWithValue("observed", observedAt);
             await touch.ExecuteNonQueryAsync(cancellationToken);
         }
 
         var participantIds = new List<Guid>();
-        if (isNew || changed)
+        if (applied)
         {
             await using (var delete = new NpgsqlCommand(
                 "DELETE FROM source_event_participants WHERE source_event_id = @id",

@@ -99,8 +99,10 @@ public class ConnectorTests
         }
     }
 
-    [Fact]
-    public async Task Eva_fixture_honours_record_ceiling()
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    public async Task Eva_fixture_honours_record_ceiling(int limit)
     {
         var path = Path.Combine(Path.GetTempPath(), $"stars-eva-limit-{Guid.NewGuid():N}.json");
         await File.WriteAllTextAsync(path, """
@@ -109,7 +111,9 @@ public class ConnectorTests
                 {"match_id": 1, "match_date": "2026-11-20", "home_team_id": 1, "home_team_name": "A",
                  "away_team_id": 2, "away_team_name": "B"},
                 {"match_id": 2, "match_date": "2026-11-21", "home_team_id": 1, "home_team_name": "A",
-                 "away_team_id": 3, "away_team_name": "C"}
+                 "away_team_id": 3, "away_team_name": "C"},
+                {"match_id": 3, "home_team_id": 1, "home_team_name": "A", "away_team_id": 4, "away_team_name": "D"},
+                {"match_id": 4, "home_team_id": 1, "home_team_name": "A", "away_team_id": 5, "away_team_name": "E"}
               ]
             }
             """);
@@ -119,13 +123,45 @@ public class ConnectorTests
             var connector = new EvaDataHubConnector();
             var batches = new List<SourceBatch>();
             await foreach (var batch in connector.ReadSnapshotAsync(
-                               Context(path, maxRecords: 1),
+                               Context(path, maxRecords: limit),
                                CancellationToken.None))
             {
                 batches.Add(batch);
             }
 
-            Assert.Single(batches.SelectMany(batch => batch.Events));
+            Assert.Equal(limit, batches.Sum(batch => batch.RecordCount));
+            Assert.Equal(limit, batches.SelectMany(batch => batch.Events).Count());
+            Assert.EndsWith($":{limit}:complete", batches[^1].Checkpoint);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Theory]
+    [InlineData(3)]
+    [InlineData(5)]
+    public async Task Rest_fixture_limits_partial_entity_and_event_pages(int limit)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"stars-rest-limit-{Guid.NewGuid():N}.json");
+        await File.WriteAllTextAsync(path, JsonSerializer.Serialize(new
+        {
+            entities = Enumerable.Range(1, 4).Select(id => new { key = $"team:{id}", name = $"Team {id}" }),
+            events = Enumerable.Range(1, 4).Select(id => new { key = $"event:{id}" }),
+        }));
+        try
+        {
+            var batches = new List<SourceBatch>();
+            await foreach (var batch in new FixtureRestConnector().ReadSnapshotAsync(
+                               Context(path, maxRecords: limit), CancellationToken.None))
+            {
+                batches.Add(batch);
+            }
+
+            Assert.Equal(limit, batches.Sum(batch => batch.RecordCount));
+            Assert.Equal(Math.Min(4, limit), batches.Sum(batch => batch.Entities.Count));
+            Assert.Equal(Math.Max(0, limit - 4), batches.Sum(batch => batch.Events.Count));
         }
         finally
         {

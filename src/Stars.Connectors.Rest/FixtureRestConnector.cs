@@ -1,6 +1,5 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Stars.Connectors.Abstractions;
 
 namespace Stars.Connectors.Rest;
@@ -13,11 +12,7 @@ namespace Stars.Connectors.Rest;
 public sealed class FixtureRestConnector : IConnector
 {
     public const string ConnectorKey = "rest.fixture";
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
-    {
-        PropertyNameCaseInsensitive = true,
-        Converters = { new JsonStringEnumConverter() },
-    };
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public string Key => ConnectorKey;
 
@@ -78,7 +73,7 @@ public sealed class FixtureRestConnector : IConnector
         long emitted = 0;
         var sequence = 0;
 
-        foreach (var page in entities.Chunk(pageSize))
+        foreach (var page in entities.Take((int)Math.Min(context.MaxRecords, int.MaxValue)).Chunk(pageSize))
         {
             cancellationToken.ThrowIfCancellationRequested();
             emitted += page.Length;
@@ -95,7 +90,7 @@ public sealed class FixtureRestConnector : IConnector
             }
         }
 
-        foreach (var page in events.Chunk(pageSize))
+        foreach (var page in events.Take((int)Math.Min(context.MaxRecords - emitted, int.MaxValue)).Chunk(pageSize))
         {
             cancellationToken.ThrowIfCancellationRequested();
             emitted += page.Length;

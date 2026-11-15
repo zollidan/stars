@@ -95,14 +95,12 @@ public sealed class RegistryQueryService(NpgsqlDataSource dataSource)
             });
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-            var index = new Dictionary<Guid, int>();
+            var seenMasters = new HashSet<Guid>();
             while (await reader.ReadAsync(cancellationToken))
             {
                 var masterId = reader.GetGuid(0);
-                if (!index.TryGetValue(masterId, out var position))
+                if (seenMasters.Add(masterId))
                 {
-                    index[masterId] = masters.Count;
-                    position = masters.Count;
                     masters.Add(new DirectoryEntryView(
                         masterId,
                         reader.GetString(1),
@@ -114,11 +112,6 @@ public sealed class RegistryQueryService(NpgsqlDataSource dataSource)
                         reader.GetFieldValue<DateTimeOffset>(7),
                         [],
                         []));
-                }
-                else
-                {
-                    // Replace the placeholder list lazily below; records are immutable, so
-                    // links are accumulated and attached after reading.
                 }
 
                 var sourceId = reader.GetGuid(8);
@@ -303,36 +296,6 @@ public sealed class RegistryQueryService(NpgsqlDataSource dataSource)
             reader.GetString(7),
             reader.GetFieldValue<DateTimeOffset>(8),
             reader.IsDBNull(9) ? null : reader.GetDecimal(9));
-    }
-
-    public async Task<DirectoryEntryView?> FindMasterForSourceAsync(
-        Guid sourceFeedId,
-        string entityKind,
-        string sourceKey,
-        CancellationToken cancellationToken)
-    {
-        var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        try
-        {
-            await using var command = new NpgsqlCommand(
-                """
-                SELECT link.master_entity_id
-                FROM source_entities se
-                JOIN entity_links link
-                    ON link.source_entity_id = se.id AND link.valid_to IS NULL
-                WHERE se.source_feed_id = @feed AND se.entity_kind = @kind AND se.source_key = @key
-                LIMIT 1
-                """, connection);
-            command.Parameters.AddWithValue("feed", sourceFeedId);
-            command.Parameters.AddWithValue("kind", entityKind);
-            command.Parameters.AddWithValue("key", sourceKey);
-            var value = await command.ExecuteScalarAsync(cancellationToken);
-            return value is Guid id ? await GetMasterAsync(id, cancellationToken) : null;
-        }
-        finally
-        {
-            await connection.DisposeAsync();
-        }
     }
 
     private static async Task<Dictionary<Guid, IReadOnlyList<string>>> LoadMasterNamesAsync(

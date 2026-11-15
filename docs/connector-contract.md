@@ -87,16 +87,20 @@ SourceBatch(
     IReadOnlyList<SourceEntityRecord> Entities,
     IReadOnlyList<SourceEventRecord> Events,
     string? Checkpoint,
-    long Sequence)
+    long Sequence = 0,
+    int? InputRecordCount = null)
 ```
 
 - The connector streams pages; it must not materialise the whole provider dataset.
 - `Checkpoint` is written to `sync_cursors` only after every record in the page is
   committed. A connector that cannot resume should return a new checkpoint per page and
   tolerate replay.
-- `RecordCount` counts entities plus events.
+- `RecordCount` counts input snapshot records. By default this is entities plus events.
+  A connector that expands one input row into several observations sets `InputRecordCount`;
+  EVA counts match rows, including the teams and competition produced from each row.
 - `ConnectorContext.MaxRecords` is a hard ceiling. Implementations must stop before
-  exceeding it.
+  exceeding it. Provider/feed `maxRecords` can lower the global limit. The sync service
+  rejects oversized pages without committing their checkpoint; it never truncates a page.
 
 ## 5. Context and secrets
 
@@ -129,7 +133,6 @@ Settings:
   "mode": "grpc",
   "address": "http://datahub:50051",
   "dataset": "api_sport_matches_v1",
-  "pageSize": 1000,
   "maxRecords": 300
 }
 ```
@@ -163,8 +166,7 @@ Settings:
 ```json
 {
   "fixturePath": "/app/fixtures/rest-provider.json",
-  "pageSize": 100,
-  "snapshotVersion": "2026-11-14"
+  "pageSize": 100
 }
 ```
 

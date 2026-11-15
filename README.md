@@ -90,7 +90,7 @@ gRPC exposes `ResolveBySourceId`, `GetMasterEntity` and `ListMatchesForReview`
 | --- | --- | --- |
 | `ConnectionStrings__Stars` | local dev value | PostgreSQL connection string |
 | `Stars__AutoMigrate` | `true` | Apply EF migrations at startup |
-| `Stars__MaxRecordsPerSnapshot` | `5000` | Hard ceiling per connector run |
+| `Stars__MaxRecordsPerSnapshot` | `5000` | Hard ceiling on input snapshot records per run (match rows for EVA) |
 | `Stars__Demo__Enabled` | `true` | Seed demo providers on an empty database |
 | `Stars__Demo__AutoSync` | `true` | Run the first demo import before the worker starts |
 | `Stars__Demo__FixtureRoot` | `fixtures` | Fixture directory |
@@ -151,6 +151,7 @@ Frontend:
 ```bash
 cd frontend
 npm ci
+npm test
 npm run build
 ```
 

@@ -70,7 +70,7 @@ public sealed class SourceSyncService(
 
         if (feed is null)
         {
-            throw new InvalidOperationException($"Source feed {sourceFeedId} was not found.");
+            throw new KeyNotFoundException($"Source feed {sourceFeedId} was not found.");
         }
 
         if (!feed.IsEnabled || !feed.ProviderConnection.IsEnabled)
@@ -91,6 +91,19 @@ public sealed class SourceSyncService(
                 $"Connector '{connector.Key}' does not support snapshots.");
         }
 
+        var settings = MergeSettings(feed.ProviderConnection.Settings, feed.Config);
+        long maxRecords = options.Value.MaxRecordsPerSnapshot;
+        if (settings.TryGetProperty("maxRecords", out var configuredLimit))
+        {
+            if (configuredLimit.ValueKind != JsonValueKind.Number
+                || !configuredLimit.TryGetInt64(out var providerLimit) || providerLimit <= 0)
+            {
+                throw new InvalidOperationException("Provider maxRecords must be a positive integer.");
+            }
+
+            maxRecords = Math.Min(maxRecords, providerLimit);
+        }
+
         var run = new SyncRun
         {
             SourceFeedId = feed.Id,
@@ -108,7 +121,6 @@ public sealed class SourceSyncService(
             .Select(value => value.CursorValue)
             .SingleOrDefaultAsync(cancellationToken);
 
-        var settings = MergeSettings(feed.ProviderConnection.Settings, feed.Config);
         var context = new ConnectorContext(
             feed.ProviderConnectionId,
             feed.Id,
@@ -117,33 +129,23 @@ public sealed class SourceSyncService(
             feed.ProviderConnection.BaseUrl,
             settings,
             cursor,
-            options.Value.MaxRecordsPerSnapshot,
+            maxRecords,
             secrets.Resolve(feed.ProviderConnection.AuthSecretRef),
             httpClientFactory.CreateClient("connectors"));
 
         long recordsRead = 0;
         long recordsChanged = 0;
-        var feedDescriptor = new FeedDescriptor(
-            feed.Id,
-            feed.ProviderConnectionId,
-            feed.FeedKey,
-            feed.EntityKind,
-            feed.DatasetRef,
-            feed.SyncMode,
-            feed.Config.RootElement.Clone());
+        var feedDescriptor = new FeedDescriptor(feed.Id, feed.FeedKey);
 
         try
         {
             await foreach (var batch in connector.ReadSnapshotAsync(context, cancellationToken)
                                .WithCancellation(cancellationToken))
             {
-                if (recordsRead >= options.Value.MaxRecordsPerSnapshot)
+                if (batch.RecordCount < 0 || batch.RecordCount > maxRecords - recordsRead)
                 {
-                    logger.LogInformation(
-                        "Feed {FeedKey} reached the configured {MaxRecords} record ceiling; stopping the snapshot safely.",
-                        feed.FeedKey,
-                        options.Value.MaxRecordsPerSnapshot);
-                    break;
+                    throw new InvalidOperationException(
+                        $"Connector '{connector.Key}' exceeded the {maxRecords} input record limit.");
                 }
 
                 var ingested = await ingestion.IngestBatchAsync(

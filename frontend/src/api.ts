@@ -106,14 +106,12 @@ export const api = {
     }),
 }
 
-export async function waitForWorker(refresh: () => Promise<void>): Promise<void> {
+export async function waitForWorker(): Promise<void> {
   for (let attempt = 0; attempt < 40; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 350))
     const sources = await api.sources()
     if (sources.every((source) => !source.hasChanges)) {
-      await refresh()
       return
     }
   }
-  await refresh()
 }
