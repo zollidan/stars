@@ -173,6 +173,7 @@ shape, current precision/recall baseline and the CI corpus extracted from it.
 - [Architecture](docs/architecture.md)
 - [PlantUML diagrams](docs/diagrams/README.md): components, deployment, matching algorithm, use cases, request flows, data model
 - [Legacy team-directory evaluation](docs/legacy-eval.md)
+- [Performance and load testing](docs/performance.md)
 - [Connector contract](docs/connector-contract.md)
 - [Prototype report](docs/prototype-report.md)
 - [ADR-0001: PostgreSQL + pg_trgm](docs/adr/0001-postgres-pg-trgm.md)
