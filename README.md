@@ -34,6 +34,8 @@ docker compose up --build
 
 - Admin UI: <http://localhost:5080>
 - HTTP API: <http://localhost:5080/api/sources>
+- Interactive HTTP API reference: <http://localhost:5080/scalar>
+- OpenAPI document: <http://localhost:5080/openapi/v1.json>
 - Health: <http://localhost:5080/health/live>, `/health/ready`
 - gRPC (cleartext h2c): `http://localhost:5081`
 
@@ -83,6 +85,47 @@ curl -X POST localhost:5080/api/review/<candidateId>/reject \
 
 gRPC exposes `ResolveBySourceId`, `GetMasterEntity` and `ListMatchesForReview`
 (`src/Stars.Api/Protos/stars.proto`).
+
+## Container image and GitHub Actions
+
+[CI](.github/workflows/ci.yml) builds and tests the backend (including PostgreSQL
+integration tests), tests/builds the frontend, then builds the complete container image.
+Pull requests only build; pushes to `master`/`main`, tags matching `v*`, and manual
+workflow runs also publish to `ghcr.io/zollidan/stars` using `GITHUB_TOKEN` with
+`packages: write`. No registry password secret is required.
+
+Image tags:
+
+- `latest` — the latest successful build of the repository's default branch.
+- `sha-<full-commit-sha>` — a specific revision.
+- `v1.2.3` — a build triggered by that Git tag.
+
+Images target `linux/amd64`. For repeatable deployments, use a version tag or image digest.
+In another project's Compose file, connect STARS to an existing PostgreSQL database:
+
+```yaml
+services:
+  stars:
+    image: ghcr.io/zollidan/stars:latest
+    environment:
+      ConnectionStrings__Stars: Host=postgres;Database=stars;Username=stars;Password=${STARS_DB_PASSWORD}
+      Stars__Demo__Enabled: "false"
+    ports:
+      - "5080:5080"
+      - "5081:5081"
+```
+
+The database and credentials must already exist; STARS applies its schema migrations at
+startup. The image includes the admin UI and Scalar at `/scalar`, with OpenAPI JSON at
+`/openapi/v1.json`, in all environments. Scalar covers the HTTP API; the gRPC contract
+remains [stars.proto](src/Stars.Api/Protos/stars.proto). Scalar's JavaScript is served
+locally, and external font loading is disabled.
+
+New GHCR packages are private by default. For another repository's Actions workflow to
+pull a private image, grant that repository read access under the package's **Manage
+Actions access** settings and use its `GITHUB_TOKEN` with `packages: read`. For a local
+or external deployment, authenticate to GHCR with a token that has `read:packages`, or
+make the package public if anonymous pulls are intended.
 
 ## Configuration
 

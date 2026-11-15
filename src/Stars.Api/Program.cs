@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
+using Scalar.AspNetCore;
 using Stars.Api.Endpoints;
 using Stars.Api.Services;
 using Stars.Connectors.Abstractions;
@@ -12,6 +13,7 @@ using Stars.Infrastructure.Persistence;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddGrpc();
+builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 builder.Services.AddCors(options =>
@@ -55,6 +57,8 @@ app.UseCors("admin");
 
 app.MapStarsEndpoints();
 app.MapGrpcService<RegistryGrpcService>();
+app.MapOpenApi();
+app.MapScalarApiReference(options => options.WithTitle("STARS HTTP API").DisableDefaultFonts());
 
 app.MapHealthChecks("/health/live", new HealthCheckOptions
 {
@@ -63,7 +67,7 @@ app.MapHealthChecks("/health/live", new HealthCheckOptions
 app.MapHealthChecks("/health/ready");
 app.MapHealthChecks("/health/db");
 
-app.MapGet("/", () => Results.Redirect("/index.html"));
+app.MapGet("/", () => Results.Redirect("/index.html")).ExcludeFromDescription();
 
 app.Run();
 
