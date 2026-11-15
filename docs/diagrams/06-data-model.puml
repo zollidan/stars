@@ -1,0 +1,212 @@
+@startuml STARS_Data_Model
+title STARS prototype — core data model
+
+hide circle
+skinparam linetype ortho
+skinparam wrapWidth 220
+
+entity "provider_connections" as PC {
+  * id : uuid
+  --
+  name : text
+  connector_key : text
+  base_url : text
+  auth_secret_ref : text
+  settings : jsonb
+  is_enabled : bool
+}
+
+entity "source_feeds" as SF {
+  * id : uuid
+  --
+  provider_connection_id : uuid
+  feed_key : text
+  entity_kind : text
+  dataset_ref : text
+  sync_mode : text
+  config : jsonb
+  is_enabled : bool
+}
+
+entity "sync_cursors" as SC {
+  * id : uuid
+  --
+  source_feed_id : uuid
+  stream_key : text
+  cursor_value : text
+  last_success_at : timestamptz
+}
+
+entity "sync_runs" as SR {
+  * id : uuid
+  --
+  source_feed_id : uuid
+  status : text
+  records_read : bigint
+  records_changed : bigint
+  error_message : text
+}
+
+entity "source_entities" as SE {
+  * id : uuid
+  --
+  source_feed_id : uuid
+  entity_kind : text
+  source_key : text
+  external_id : text
+  display_name : text
+  normalized_name : text
+  sport_code : text
+  country_code : char(2)
+  identity_hash : text
+  first_seen_at : timestamptz
+  last_seen_at : timestamptz
+}
+
+entity "source_entity_names" as SEN {
+  * id : uuid
+  --
+  source_entity_id : uuid
+  name : text
+  normalized_name : text
+  is_current : bool
+}
+
+entity "source_events" as EV {
+  * id : uuid
+  --
+  source_feed_id : uuid
+  source_key : text
+  competition_source_entity_id : uuid
+  kickoff_at : timestamptz
+  context_hash : text
+}
+
+entity "source_event_participants" as EP {
+  * id : uuid
+  --
+  source_event_id : uuid
+  source_entity_id : uuid
+  participant_role : text
+}
+
+entity "master_entities" as ME {
+  * id : uuid
+  --
+  entity_kind : text
+  preferred_name : text
+  normalized_name : text
+  sport_code : text
+  country_code : char(2)
+  status : text
+}
+
+entity "master_names" as MN {
+  * id : uuid
+  --
+  master_entity_id : uuid
+  name : text
+  normalized_name : text
+  name_kind : text
+}
+
+entity "entity_links" as EL {
+  * id : uuid
+  --
+  source_entity_id : uuid
+  master_entity_id : uuid
+  decision_id : uuid
+  confidence : numeric
+  valid_from : timestamptz
+  valid_to : timestamptz
+}
+
+entity "match_candidates" as MC {
+  * id : uuid
+  --
+  source_entity_id : uuid
+  candidate_source_entity_id : uuid
+  candidate_master_entity_id : uuid
+  score : numeric
+  status : text
+  matcher_version : text
+  input_hash : text
+}
+
+entity "match_evidence" as MEV {
+  * id : uuid
+  --
+  match_candidate_id : uuid
+  evidence_key : text
+  evidence_type : text
+  weight : numeric
+  details : jsonb
+}
+
+entity "match_decisions" as MD {
+  * id : uuid
+  --
+  source_entity_id : uuid
+  match_candidate_id : uuid
+  master_entity_id : uuid
+  decision_type : text
+  decided_by : text
+  ruleset_version : text
+  reason : text
+  decision_details : jsonb
+}
+
+entity "processing_jobs" as PJ {
+  * id : uuid
+  --
+  source_entity_id : uuid
+  reason : text
+  input_hash : text
+  matcher_version : text
+  status : text
+  attempts : int
+  run_after : timestamptz
+  lease_until : timestamptz
+}
+
+PC ||--o{ SF
+SF ||--o{ SE
+SF ||--o{ EV
+SF ||--o{ SC
+SF ||--o{ SR
+SE ||--o{ SEN
+SE ||--o{ EL
+SE ||--o{ MC
+SE ||--o{ MD
+SE ||--o{ PJ
+SE ||--o{ EP
+EV ||--o{ EP
+EV }o--o| SE : competition
+ME ||--o{ MN
+ME ||--o{ EL
+ME ||--o{ MC
+MC ||--o{ MEV
+MC ||--o{ MD
+MD ||--o{ EL
+
+note right of SE
+  Unique: (source_feed_id, entity_kind, source_key).
+  identity_hash changes only for stable
+  observed fields; odds snapshots do not
+  trigger rematching.
+end note
+
+note right of EL
+  Partial unique index:
+  source_entity_id WHERE valid_to IS NULL.
+  A source record has at most one active master.
+end note
+
+note right of PJ
+  Unique:
+  (source_entity_id, reason,
+   input_hash, matcher_version).
+  Leasing uses FOR UPDATE SKIP LOCKED.
+end note
+
+@enduml

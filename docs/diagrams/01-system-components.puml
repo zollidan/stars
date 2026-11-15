@@ -1,0 +1,60 @@
+@startuml STARS_System_Components
+title STARS prototype — system components
+
+skinparam componentStyle rectangle
+skinparam wrapWidth 240
+left to right direction
+
+package "External providers" {
+  component "EVA DataHub\nread-only gRPC\nReadDataset + Arrow IPC" as EVA
+  component "REST / JSON provider\nsnapshot endpoint" as REST
+  file "fixtures/\nlocal demo snapshots" as FIXTURES
+}
+
+package "STARS API process" {
+  component "Connector registry\nIConnector" as CONNECTORS
+  component "SourceSyncService\nbounded snapshot runs" as SYNC
+  component "SourceIngestionStore\nidempotent upserts\nidentity/context hashes" as INGEST
+  component "ProcessingJobWorker\nsingle hosted service" as WORKER
+  component "MatchingProcessor\n+ MatchEngine teams-v1" as MATCH
+  component "RegistryQueryService\nread models" as QUERY
+  component "ReviewService\nmanual decisions" as REVIEW
+  component "HTTP API\n/api/*" as HTTP
+  component "gRPC API\nstars.v1" as GRPC
+  component "React admin UI\nVite static bundle" as UI
+}
+
+database "PostgreSQL 18\npg_trgm" as PG
+cloud "OTLP collector\noptional" as OTLP
+
+EVA --> CONNECTORS : gRPC / Arrow
+REST --> CONNECTORS : HTTP / JSON
+FIXTURES --> CONNECTORS : fixture mode
+CONNECTORS --> SYNC : SourceBatch pages
+SYNC --> INGEST : one page = one transaction
+INGEST --> PG : source_entities/events\ncursor + jobs
+WORKER --> PG : lease jobs\nFOR UPDATE SKIP LOCKED
+WORKER --> MATCH : source entity + input hash
+MATCH --> PG : candidates, evidence,\ndecisions, links
+QUERY --> PG : directory, review,\nresolve, metrics
+REVIEW --> PG : manual link/reject/unlink
+UI --> HTTP : fetch
+HTTP --> QUERY
+HTTP --> REVIEW
+HTTP --> SYNC : manual Sync
+GRPC --> QUERY
+HTTP ..> OTLP : metrics (when configured)
+
+note right of WORKER
+  One worker per process in the prototype.
+  A second worker can reuse the same queue
+  contract without changing matching.
+end note
+
+note bottom of PG
+  Source Registry + Master Registry live together.
+  One active link per source entity.
+  Confirmed links are closed, never rewritten.
+end note
+
+@enduml

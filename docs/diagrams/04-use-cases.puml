@@ -1,0 +1,95 @@
+@startuml STARS_Use_Cases
+title STARS prototype — actors, use cases and requests
+
+skinparam wrapWidth 220
+left to right direction
+
+actor "Operator /\nadministrator" as OP
+actor "Programmatic\nclient" as CLIENT
+actor "Data provider\n(EVA / REST)" as PROVIDER
+actor "Worker\n(system)" as WORKER
+
+rectangle "STARS" {
+  usecase "View Sources\nand sync status" as UC_SOURCES
+  usecase "Run bounded Sync" as UC_SYNC
+  usecase "View Directory\n(canonical + sources)" as UC_DIRECTORY
+  usecase "Review candidates\nwith evidence" as UC_REVIEW
+  usecase "Confirm link" as UC_CONFIRM
+  usecase "Reject candidate" as UC_REJECT
+  usecase "Unlink source\nand keep audit" as UC_UNLINK
+  usecase "Provide bounded\nsnapshot" as UC_PROVIDE
+  usecase "ResolveBySourceId" as UC_RESOLVE
+  usecase "GetMasterEntity" as UC_MASTER
+  usecase "ListMatchesForReview" as UC_LIST
+  usecase "Match source entity" as UC_MATCH
+  usecase "Keep in review\n(ambiguous / conflict)" as UC_HOLD
+}
+
+OP --> UC_SOURCES
+OP --> UC_SYNC
+OP --> UC_DIRECTORY
+OP --> UC_REVIEW
+OP --> UC_CONFIRM
+OP --> UC_REJECT
+OP --> UC_UNLINK
+
+CLIENT --> UC_RESOLVE
+CLIENT --> UC_MASTER
+CLIENT --> UC_LIST
+
+PROVIDER --> UC_PROVIDE : STARS pulls\n(no inbound API)
+WORKER --> UC_MATCH
+
+UC_CONFIRM .> UC_REVIEW : <<extend>>
+UC_REJECT .> UC_REVIEW : <<extend>>
+UC_UNLINK .> UC_DIRECTORY : <<extend>>
+UC_MATCH .> UC_HOLD : <<extend>>
+
+note right of UC_SYNC
+  POST /api/sources/{feedId}/sync
+  POST /api/sync
+  Bounded by Stars:MaxRecordsPerSnapshot.
+end note
+
+note right of UC_SOURCES
+  GET /api/sources
+end note
+
+note right of UC_DIRECTORY
+  GET /api/directory
+  GET /api/directory/{masterId}
+end note
+
+note right of UC_REVIEW
+  GET /api/review
+  GET /api/review?masterId=...
+end note
+
+note right of UC_CONFIRM
+  POST /api/review/{candidateId}/confirm
+  body: { reviewer }
+end note
+
+note right of UC_REJECT
+  POST /api/review/{candidateId}/reject
+  body: { reviewer, reason }
+end note
+
+note right of UC_UNLINK
+  POST /api/masters/{masterId}/unlink/{sourceEntityId}
+end note
+
+note right of UC_RESOLVE
+  gRPC stars.v1.StarsRegistry.ResolveBySourceId
+  HTTP GET /api/resolve?feedId=&kind=&sourceKey=
+end note
+
+note right of UC_MASTER
+  gRPC stars.v1.StarsRegistry.GetMasterEntity
+end note
+
+note right of UC_LIST
+  gRPC stars.v1.StarsRegistry.ListMatchesForReview
+end note
+
+@enduml

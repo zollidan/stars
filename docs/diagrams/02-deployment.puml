@@ -1,0 +1,57 @@
+@startuml STARS_Deployment
+title STARS prototype — deployment
+
+skinparam wrapWidth 250
+left to right direction
+
+actor "Operator" as OP
+node "Workstation" {
+  node "Browser" as BROWSER {
+    artifact "React admin UI\nstatic files served by API" as UI
+  }
+  node "API client / CLI" as CLIENT
+}
+
+node "Docker host / single VM" as HOST {
+  node "docker compose network" as NET {
+    node "stars-api container\nASP.NET Core 10" as API {
+      artifact "HTTP :5080\nUI + /api + health" as HTTP
+      artifact "gRPC :5081\nh2c, trusted network" as GRPC
+      artifact "Background worker\nProcessingJobWorker" as WORKER
+      artifact "Connectors\nEVA + REST" as CONN
+    }
+    database "stars-postgres container\nPostgreSQL 18 + pg_trgm" as DB
+    folder "pgdata volume" as VOL
+    folder "fixtures/\nEVA-shaped + REST snapshots" as FIX
+  }
+}
+
+cloud "EVA DataHub" as EVA
+cloud "REST provider" as REST
+cloud "OTLP collector\noptional" as OTLP
+
+OP --> BROWSER
+BROWSER --> HTTP : HTTP/JSON
+CLIENT --> GRPC : gRPC
+HTTP --> DB : Npgsql
+GRPC --> DB : Npgsql
+WORKER --> DB : jobs, links, evidence
+CONN --> EVA : gRPC ReadDataset\nbounded snapshot
+CONN --> REST : HTTPS / JSON\nsnapshot
+CONN --> FIX : local demo mode
+DB --> VOL : durable state
+API ..> OTLP : metrics\nOTEL_EXPORTER_OTLP_ENDPOINT
+
+note right of API
+  Secrets are environment references only:
+  provider_connections.auth_secret_ref
+  → DATAHUB_SERVICE_TOKEN / STARS_SECRET_*.
+end note
+
+note bottom of DB
+  Local prototype boundary:
+  admin UI/API has no authentication.
+  Use a trusted network or reverse proxy.
+end note
+
+@enduml

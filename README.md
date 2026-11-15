@@ -171,6 +171,7 @@ shape, current precision/recall baseline and the CI corpus extracted from it.
 ## Documentation
 
 - [Architecture](docs/architecture.md)
+- [PlantUML diagrams](docs/diagrams/README.md): components, deployment, matching algorithm, use cases, request flows, data model
 - [Legacy team-directory evaluation](docs/legacy-eval.md)
 - [Connector contract](docs/connector-contract.md)
 - [Prototype report](docs/prototype-report.md)

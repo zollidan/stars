@@ -1,5 +1,13 @@
 # STARS architecture (prototype v0.1)
 
+PlantUML diagrams live in [docs/diagrams](diagrams/README.md):
+
+- [system components](diagrams/01-system-components.puml)
+- [deployment](diagrams/02-deployment.puml)
+- [sync and matching algorithm](diagrams/03-sync-and-matching.puml)
+- [use cases and requests](diagrams/04-use-cases.puml), [request flows](diagrams/05-request-flows.puml)
+- [core data model](diagrams/06-data-model.puml)
+
 ## 1. Components
 
 ```mermaid

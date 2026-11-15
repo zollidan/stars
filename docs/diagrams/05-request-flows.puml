@@ -1,0 +1,95 @@
+@startuml STARS_Request_Flows
+title STARS prototype — request flows: who calls what
+
+skinparam wrapWidth 260
+actor "Operator" as OP
+actor "Programmatic client" as CLIENT
+participant "Admin UI\n(React)" as UI
+participant "HTTP API\n/api/*" as HTTP
+participant "gRPC API\nstars.v1" as GRPC
+participant "SourceSyncService" as SYNC
+participant "Connector\n(EVA / REST)" as CONN
+participant "SourceIngestionStore" as ING
+participant "PostgreSQL\n+ job queue" as DB
+participant "ProcessingJobWorker" as WORK
+participant "MatchingProcessor\n+ MatchEngine" as MATCH
+participant "ReviewService" as REVIEW
+
+== 1. Operator: manual bounded sync and status ==
+OP -> UI : open Sources
+UI -> HTTP : GET /api/sources
+HTTP -> DB : feeds, sync runs,\ncursors, counts
+DB --> HTTP : SourceFeedView[]
+HTTP --> UI : JSON
+OP -> UI : press Sync
+UI -> HTTP : POST /api/sources/{feedId}/sync
+HTTP -> SYNC : SyncFeedAsync(feedId, "manual")
+SYNC -> CONN : ReadSnapshotAsync(context)
+CONN --> SYNC : SourceBatch(page)
+SYNC -> ING : IngestBatchAsync(page)
+ING -> DB : upsert entity/event\n+ enqueue job\n+ advance cursor\n(same transaction)
+DB --> ING : committed
+SYNC --> HTTP : SyncFeedResult
+HTTP --> UI : 200/502/409
+
+== 2. Background worker: matching is asynchronous ==
+WORK -> DB : lease pending job\nFOR UPDATE SKIP LOCKED
+DB --> WORK : job(source_entity_id, input_hash)
+WORK -> MATCH : ProcessAsync
+MATCH -> DB : load profile + context
+MATCH -> DB : pg_trgm candidates\nother feeds + masters
+MATCH -> DB : score + evidence
+alt auto-link
+  MATCH -> DB : create/resolve master\n+ decision + link\n+ accepted candidate
+else review required
+  MATCH -> DB : pending candidates\n+ evidence + review_required
+end
+MATCH --> WORK : result
+WORK -> DB : mark job done\n(or retry with backoff)
+
+== 3. Operator: review and manual decision ==
+OP -> UI : open Review
+UI -> HTTP : GET /api/review
+HTTP -> DB : pending candidates + evidence
+DB --> HTTP : ReviewItemView[]
+HTTP --> UI : JSON
+OP -> UI : Confirm
+UI -> HTTP : POST /api/review/{id}/confirm
+HTTP -> REVIEW : ConfirmAsync(candidateId, reviewer)
+REVIEW -> DB : create/resolve master\n+ manual_link decision\n+ link + names
+DB --> REVIEW : committed
+REVIEW --> HTTP : masterId
+HTTP --> UI : 200
+OP -> UI : Reject
+UI -> HTTP : POST /api/review/{id}/reject
+HTTP -> REVIEW : RejectAsync(candidateId, reviewer, reason)
+REVIEW -> DB : reject decision\n+ candidate status
+DB --> REVIEW : committed
+REVIEW --> HTTP : 200
+
+== 4. Operator: inspect and unlink ==
+OP -> UI : open Directory
+UI -> HTTP : GET /api/directory
+HTTP -> DB : masters + active links\n+ source names
+DB --> HTTP : DirectoryEntryView[]
+HTTP --> UI : JSON
+OP -> UI : unlink source
+UI -> HTTP : POST /api/masters/{masterId}/unlink/{sourceEntityId}
+HTTP -> REVIEW : UnlinkAsync
+REVIEW -> DB : close link (valid_to)\n+ unlink decision
+DB --> REVIEW : committed
+REVIEW --> HTTP : 200
+
+== 5. Programmatic client: read API ==
+CLIENT -> GRPC : ResolveBySourceId(feedId, kind, sourceKey)
+GRPC -> DB : source entity + active link
+DB --> GRPC : master
+GRPC --> CLIENT : ResolveBySourceIdResponse
+CLIENT -> GRPC : GetMasterEntity(masterId)
+GRPC -> DB : master + names + source links
+GRPC --> CLIENT : GetMasterEntityResponse
+CLIENT -> GRPC : ListMatchesForReview(limit)
+GRPC -> DB : pending candidates + evidence
+GRPC --> CLIENT : ListMatchesForReviewResponse
+
+@enduml

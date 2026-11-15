@@ -1,0 +1,76 @@
+@startuml STARS_Sync_And_Matching
+title STARS prototype — sync and matching algorithm
+
+skinparam wrapWidth 320
+start
+
+partition "1. Connector snapshot (bounded and resumable)" {
+  :Read next SourceBatch page\nfrom IConnector.ReadSnapshotAsync;
+  :BEGIN transaction;
+  :UPSERT source_entities\nby (source_feed_id, entity_kind, source_key);
+
+  if (identity_hash changed?) then (yes)
+    :Update display/normalized fields;
+    :Close previous current name;
+    :Record name in source_entity_names;
+    :Enqueue idempotent identity job;
+  else (no)
+    :Advance last_seen_at only;
+  endif
+
+  :UPSERT source_events\nby (source_feed_id, source_key)\nand replace participants;
+  if (context_hash changed?) then (yes)
+    :Enqueue one combined\nevent_context job per participant\n(unless its identity job already covers it);
+  endif
+
+  :Advance sync_cursor\nONLY with committed page;
+  :COMMIT;
+
+  if (more pages?) then (yes)
+    :Next page;
+  else (no)
+    :Finish SyncRun;
+  endif
+}
+
+partition "2. Background worker (one job at a time)" {
+  :Lease job with\nFOR UPDATE SKIP LOCKED;
+  :Load source profile +\ncompact fixture context;
+
+  if (source already actively linked?) then (yes)
+    :Job done — confirmed links\nare immutable, no rematch;
+  else (no)
+    :Generate candidates\nother feeds + masters\nexact normal form + pg_trgm top-K;
+    :Score each candidate\nname 0.65 / sport 0.10 /\ncountry 0.05 / context 0.20;
+
+    if (hard conflict?\nsquad / sport / country) then (yes)
+      :Review: hard_conflict;
+    elseif (score >= 0.88\nand margin >= 0.03?) then (yes)
+      if (single-token name without context?\nor same-feed name ambiguity?) then (yes)
+        :Review: short_name_without_context /\nsource_name_ambiguous;
+      else (no)
+        :Auto-link transaction;
+        :Create or resolve master;
+        :Write decision + evidence + link;
+        :Mark top candidate accepted,\nsupersede the rest;
+      endif
+    else (no)
+      :Review: below_threshold / ambiguous;
+    endif
+
+    :Persist candidates + evidence;
+    :Job done (or retry with backoff);
+  endif
+}
+
+stop
+
+legend right
+  **Policy teams-v1**
+  * Auto-link only above 0.88 with margin >= 0.03.
+  * Hard conflicts always force review.
+  * Equal names are not identity.
+  * All links/decisions are appended to the audit trail.
+endlegend
+
+@enduml
