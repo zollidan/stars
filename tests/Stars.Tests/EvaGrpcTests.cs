@@ -115,8 +115,124 @@ public class EvaGrpcTests
             await writer.WriteEndAsync();
             await responseStream.WriteAsync(new DatasetBatch
             {
-                SnapshotId = 7, DatasetSnapshotId = 7, ArrowIpc = ByteString.CopyFrom(stream.ToArray()),
+                Count = 13,
+                SnapshotId = 7,
+                DatasetSnapshotId = 7,
+                ArrowIpc = ByteString.CopyFrom(stream.ToArray()),
             });
+        }
+    }
+
+    [Fact]
+    public async Task Grpc_import_keeps_resumable_cursor_while_rows_remain()
+    {
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+        {
+            ContentRootPath = Path.GetTempPath(),
+        });
+        builder.Configuration.Sources.Clear();
+        builder.WebHost.ConfigureKestrel(options =>
+            options.Listen(System.Net.IPAddress.Loopback, 0, listen => listen.Protocols = HttpProtocols.Http2));
+        builder.Services.AddGrpc();
+        await using var app = builder.Build();
+        app.MapGrpcService<ResumableSnapshotService>();
+        await app.StartAsync();
+
+        var context = new ConnectorContext(Guid.NewGuid(), Guid.NewGuid(), "test", "match",
+            app.Urls.Single(), JsonSerializer.SerializeToElement(new { dataset = "api_sport_matches_v1" }),
+            null, 3, null);
+
+        var batches = new List<SourceBatch>();
+        await foreach (var batch in new EvaDataHubConnector().ReadSnapshotAsync(context, default))
+        {
+            batches.Add(batch);
+        }
+
+        Assert.Equal(3, batches.Sum(batch => batch.RecordCount));
+        Assert.Equal("eva:api_sport_matches_v1:7:7:3", batches[^1].Checkpoint);
+
+        var resumed = context with { Cursor = batches[^1].Checkpoint };
+        batches.Clear();
+        await foreach (var batch in new EvaDataHubConnector().ReadSnapshotAsync(resumed, default))
+        {
+            batches.Add(batch);
+        }
+
+        Assert.Equal(1, batches.Sum(batch => batch.RecordCount));
+        Assert.Equal("match:4", batches.SelectMany(batch => batch.Events).Single().SourceKey);
+        Assert.Equal("eva:api_sport_matches_v1:7:7:4:complete", batches[^1].Checkpoint);
+    }
+
+    private static async Task WriteBatchAsync(
+        IServerStreamWriter<DatasetBatch> responseStream,
+        long[] matchIds,
+        long totalCount)
+    {
+        var length = matchIds.Length;
+        var fields = new List<Field>();
+        var columns = new List<IArrowArray>();
+        var names = new[]
+        {
+            "match_id", "match_date", "kickoff_time", "league",
+            "home_team_id", "home_team_name", "away_team_id", "away_team_name",
+            "first_seen_at", "collected_at",
+        };
+        foreach (var name in names)
+        {
+            IArrowArray column = name switch
+            {
+                "match_id" => new Int64Array.Builder().AppendRange(matchIds).Build(),
+                "home_team_id" => new Int64Array.Builder().AppendRange(Enumerable.Repeat(10L, length)).Build(),
+                "away_team_id" => new Int64Array.Builder().AppendRange(Enumerable.Repeat(20L, length)).Build(),
+                "home_team_name" => new StringArray.Builder().AppendRange(Enumerable.Repeat("Alpha", length)).Build(),
+                "away_team_name" => new StringArray.Builder().AppendRange(Enumerable.Repeat("Beta", length)).Build(),
+                _ => new NullArray(length),
+            };
+            fields.Add(new Field(name, column.Data.DataType, true));
+            columns.Add(column);
+        }
+
+        var schema = new Schema(fields, null);
+        using var batch = new Apache.Arrow.RecordBatch(schema, columns, length);
+        using var stream = new MemoryStream();
+        using var writer = new ArrowStreamWriter(stream, schema);
+        await writer.WriteRecordBatchAsync(batch);
+        await writer.WriteEndAsync();
+        await responseStream.WriteAsync(new DatasetBatch
+        {
+            Count = totalCount,
+            SnapshotId = 7,
+            DatasetSnapshotId = 7,
+            ArrowIpc = ByteString.CopyFrom(stream.ToArray()),
+        });
+    }
+
+    [BindServiceMethod(typeof(ResumableSnapshotService), nameof(BindService))]
+    public class ResumableSnapshotService
+    {
+        public static void BindService(ServiceBinderBase binder, ResumableSnapshotService? service) =>
+            binder.AddMethod(new Method<ReadDatasetRequest, DatasetBatch>(
+                MethodType.ServerStreaming, "eva.datahub.v1.DataHubService", "ReadDataset",
+                Marshallers.Create<ReadDatasetRequest>(value => value.ToByteArray(), data => ReadDatasetRequest.Parser.ParseFrom(data)),
+                Marshallers.Create<DatasetBatch>(value => value.ToByteArray(), data => DatasetBatch.Parser.ParseFrom(data))),
+                service is null ? null : service.ReadDataset);
+
+        public virtual async Task ReadDataset(ReadDatasetRequest request,
+            IServerStreamWriter<DatasetBatch> responseStream, ServerCallContext context)
+        {
+            using var query = JsonDocument.Parse(request.QueryJson);
+            Assert.Equal(3, query.RootElement.GetProperty("limit").GetInt32());
+            var offset = query.RootElement.GetProperty("offset").GetInt64();
+            if (offset == 0)
+            {
+                Assert.Equal(0, request.SnapshotId);
+                await WriteBatchAsync(responseStream, [1, 2, 3], 4);
+                return;
+            }
+
+            Assert.Equal(7, request.SnapshotId);
+            Assert.Equal(3, offset);
+            await WriteBatchAsync(responseStream, [4], 4);
         }
     }
 }

@@ -3,6 +3,7 @@
 .vs/
 .idea/
 .git/
+.env
 **/node_modules/
 frontend/dist/
 src/Stars.Api/wwwroot/

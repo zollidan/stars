@@ -175,7 +175,9 @@ The gRPC path:
 4. Decodes each `DatasetBatch.arrow_ipc` with an Arrow IPC stream reader.
 5. Reduces rows to teams, competitions and one compact event per match. **Odds and
    bookmaker snapshots are not stored.**
-6. Emits a checkpoint `eva:<dataset>:<snapshot>:<dataset_snapshot>:<offset>`.
+6. Emits a checkpoint `eva:<dataset>:<snapshot>:<dataset_snapshot>:<offset>`. A numeric
+   trailing offset is resumable; `:complete` means the bounded read reached the end of the
+   pinned snapshot and the next run starts a fresh snapshot.
 
 `ReadChanges` is absent from the current DataHub contract. The connector advertises
 `SupportsChanges = false` and is never put on a timer. A manual import or a bounded

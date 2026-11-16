@@ -112,6 +112,39 @@ A REST provider is configured the same way with connector key `rest.snapshot`. I
 Provider secrets are stored only as **references** (`provider_connections.auth_secret_ref`).
 `provider_connections.settings` never contains an API key.
 
+## Connecting a real DataHub
+
+The EVA connector talks to DataHub over gRPC and reads Arrow batches. The compose file
+can run a read-side DataHub image pulled from GHCR:
+
+```bash
+cp .env.example .env
+# Fill DATAHUB_SERVICE_TOKEN, DATAHUB_WRITE_CATALOG_URL, LAKE_S3_BUCKET and S3 credentials.
+echo "$GHCR_TOKEN" | docker login ghcr.io -u <github-user> --password-stdin
+docker compose --profile datahub up --build
+```
+
+The `datahub` service uses `ghcr.io/zollidan/eva-datahub` and expects an existing EVA
+DuckLake catalog and S3 bucket. It is intentionally read-only for STARS: STARS only calls
+`ReadDataset` and never writes to the lake. Use a catalog copy or a dedicated catalog
+database for a read-side instance, and prefer credentials limited to reading the lake.
+
+If you already have a running DataHub, skip the profile and point STARS at it:
+
+```bash
+STARS_EVA_ADDRESS=http://datahub:50051 \
+DATAHUB_SERVICE_TOKEN=... \
+docker compose up --build
+```
+
+The GHCR package is private. Use a token with `read:packages` (or the GitHub Actions
+`GITHUB_TOKEN` with package access). Pin `DATAHUB_VERSION` to a published tag for
+repeatable deployments.
+
+A bounded sync reads at most `Stars__MaxRecordsPerSnapshot` input rows per run. If the
+dataset is larger, the EVA cursor stays resumable and the next sync continues from the
+next offset instead of starting over.
+
 ## HTTP API
 
 Useful calls:

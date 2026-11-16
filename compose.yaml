@@ -15,15 +15,53 @@ services:
       interval: 2s
       retries: 20
 
+  # Optional read-side DataHub pulled from GHCR. Enable with:
+  #   docker compose --profile datahub up --build
+  # It expects an existing EVA lake catalog and S3 lake; see .env.example.
+  datahub:
+    profiles: ["datahub"]
+    image: ${DATAHUB_IMAGE:-ghcr.io/zollidan/eva-datahub}:${DATAHUB_VERSION:-latest}
+    restart: unless-stopped
+    mem_limit: 2g
+    cpus: 2
+    environment:
+      SERVICE_NAME: datahub
+      DATAHUB_BIND: 0.0.0.0:50051
+      DATAHUB_ADDRESS: 127.0.0.1:50051
+      DATAHUB_SERVICE_TOKEN: ${DATAHUB_SERVICE_TOKEN:?DATAHUB_SERVICE_TOKEN is required}
+      # Advisory-lock database only. DuckLake metadata lives in LAKE_CATALOG_URL.
+      DATABASE_URL: ${DATAHUB_LOCK_DATABASE_URL:-postgresql+psycopg2://stars:stars@db:5432/stars}
+      LAKE_CATALOG_URL: ${DATAHUB_WRITE_CATALOG_URL:?DATAHUB_WRITE_CATALOG_URL is required}
+      LAKE_S3_BUCKET: ${LAKE_S3_BUCKET:?LAKE_S3_BUCKET is required}
+      LAKE_S3_KEY_PREFIX: ${LAKE_S3_KEY_PREFIX:-lake/}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-https://storage.yandexcloud.net}
+      S3_REGION: ${S3_REGION:-ru-central1}
+      S3_BUCKET: ${LAKE_S3_BUCKET}
+      S3_ACCESS_KEY_ID: ${DATAHUB_WRITE_S3_ACCESS_KEY_ID:?DATAHUB_WRITE_S3_ACCESS_KEY_ID is required}
+      S3_SECRET_ACCESS_KEY: ${DATAHUB_WRITE_S3_SECRET_ACCESS_KEY:?DATAHUB_WRITE_S3_SECRET_ACCESS_KEY is required}
+      OTEL_SDK_DISABLED: ${OTEL_SDK_DISABLED:-true}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.datahub", "--healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
   api:
     build: .
     depends_on:
       db:
         condition: service_healthy
+      datahub:
+        condition: service_healthy
+        required: false
     environment:
       ConnectionStrings__Stars: Host=db;Port=5432;Database=stars;Username=stars;Password=stars
-      # Point this at a reachable EVA DataHub. The feed is created from this
-      # configuration on startup; imports stay manual unless an operator triggers them.
+      # Point this at a reachable EVA DataHub. The profile above starts one from GHCR;
+      # an existing deployment can be used by setting STARS_EVA_ADDRESS instead.
       Stars__Providers__eva__BaseUrl: ${STARS_EVA_ADDRESS:-http://datahub:50051}
       # Keep the token in an environment variable; only its name is stored in PostgreSQL.
       DATAHUB_SERVICE_TOKEN: ${DATAHUB_SERVICE_TOKEN:-}

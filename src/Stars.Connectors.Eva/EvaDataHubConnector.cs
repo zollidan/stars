@@ -117,12 +117,17 @@ public sealed class EvaDataHubConnector : IConnector
         long sequence = 0;
         long? snapshotId = pinnedSnapshot;
         long? datasetSnapshotId = null;
+        long? totalCount = null;
         var emittedAny = false;
 
         await foreach (var message in call.ResponseStream.ReadAllAsync(cancellationToken))
         {
             snapshotId = message.SnapshotId;
             datasetSnapshotId = message.DatasetSnapshotId;
+            if (message.Count > 0)
+            {
+                totalCount = message.Count;
+            }
 
             if (message.ArrowIpc.Length == 0)
             {
@@ -153,8 +158,11 @@ public sealed class EvaDataHubConnector : IConnector
             }
         }
 
-        yield return SourceBatch.Empty(
-            $"eva:{dataset}:{snapshotId ?? 0}:{datasetSnapshotId ?? 0}:{offset + rowsRead}:{(emittedAny ? "complete" : "empty")}");
+        var hasMore = totalCount is { } total && offset + rowsRead < total;
+        var checkpoint = hasMore
+            ? $"eva:{dataset}:{snapshotId ?? 0}:{datasetSnapshotId ?? 0}:{offset + rowsRead}"
+            : $"eva:{dataset}:{snapshotId ?? 0}:{datasetSnapshotId ?? 0}:{offset + rowsRead}:{(emittedAny ? "complete" : "empty")}";
+        yield return SourceBatch.Empty(checkpoint);
     }
 
     internal static MappedRows MapRows(
